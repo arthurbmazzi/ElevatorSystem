@@ -13,7 +13,7 @@ Requires a .NET SDK supporting .NET 8. No external packages are used.
 
 ```powershell
 dotnet build ElevatorSystem.sln
-dotnet run --project src/ElevatorSystem.Demo
+dotnet run --project src/ElevatorSystem.Demo --no-launch-profile
 dotnet run --project tests/ElevatorSystem.Checks
 ```
 
@@ -45,7 +45,9 @@ Exit
 `Status` displays the current floor, state, and queue; `Help` lists commands.
 Invalid input prints an error and lets you try again. Processing is synchronous,
 without real-time delays; enter the next command after processing finishes.
-Running without `--interactive` preserves the fixed demo above.
+The default launch profile starts interactive mode, including when running from
+Visual Studio with F5 or Ctrl+F5. Set `ElevatorSystem.Demo` as the startup project.
+To run the fixed demo, use `dotnet run --project src/ElevatorSystem.Demo --no-launch-profile`.
 
 ## Easy-level API
 
