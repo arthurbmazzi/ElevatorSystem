@@ -69,6 +69,27 @@ internal static class MediumLevelChecks
         Check(gate.Actions.Count(a => a.Description.StartsWith("Assigned request")) == 129, "Exactly one assignment per trip");
         Check(gate.Actions.Count(a => a.Description == "Doors opened") == 258, "Pickup and destination each served once");
 
+        using var cancelGate = new GateLogger();
+        using var midFlightCancellation = new CancellationTokenSource();
+        var interrupted = new Fleet(logger: cancelGate);
+        interrupted.SubmitRequest(new Request(1, 20));
+        var interruptedRun = interrupted.ProcessRequestsAsync(midFlightCancellation.Token);
+        Check(cancelGate.Entered.Wait(TimeSpan.FromSeconds(10)), "Cancellation gate reached");
+        midFlightCancellation.Cancel();
+        cancelGate.Release.Set();
+        try { await interruptedRun.WaitAsync(TimeSpan.FromSeconds(20)); throw new Exception("Expected cancellation"); }
+        catch (OperationCanceledException) { }
+        Check(interrupted.GetStatus().PendingRequests == 1, "Mid-trip cancellation preserves passenger");
+        await interrupted.ProcessRequestsAsync().WaitAsync(TimeSpan.FromSeconds(20));
+        Check(interrupted.GetStatus().CompletedRequests == 1, "Mid-trip resume completes once");
+
+        var recovery = new Fleet(logger: new ThrowOnceLogger());
+        recovery.SubmitRequest(new Request(1, 20));
+        try { await recovery.ProcessRequestsAsync(); throw new Exception("Expected logger failure"); }
+        catch (InvalidOperationException) { }
+        await recovery.ProcessRequestsAsync().WaitAsync(TimeSpan.FromSeconds(20));
+        Check(recovery.GetStatus().CompletedRequests == 1, "Logger failure releases processing and preserves work");
+
         var failing = new Fleet(selectionStrategy: new BadStrategy(), logger: logger);
         failing.SubmitRequest(new Request(1, 20));
         Expect<InvalidOperationException>(() => failing.BalanceLoad());
@@ -110,5 +131,16 @@ internal static class MediumLevelChecks
     private sealed class BadStrategy : IElevatorSelectionStrategy
     {
         public int SelectElevator(PassengerRequest request, IReadOnlyList<ElevatorSnapshot> elevators) => -1;
+    }
+
+    private sealed class ThrowOnceLogger : IElevatorLogger
+    {
+        private bool _thrown;
+        public void Log(ElevatorAction action)
+        {
+            if (_thrown) return;
+            _thrown = true;
+            throw new InvalidOperationException("Injected logger failure");
+        }
     }
 }

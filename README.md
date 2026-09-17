@@ -1,8 +1,8 @@
 # Elevator System — Interview Exercise
 
-C# / .NET 8 implementation of the **easy level: one elevator serving floors 1–10**.
+C# / .NET 8 implementation of the **easy and medium elevator-system levels**.
 The elevator starts at floor 1 in `IDLE`, serves floor requests in FIFO order, and
-logs each movement and door transition. The next two levels await specification.
+logs each movement and door transition. The medium level adds 3–5 elevators serving floors 1–20.
 
 See [REQUIREMENTS.md](REQUIREMENTS.md) for requirements and engineering guidelines,
 and [ARCHITECTURE.md](ARCHITECTURE.md) for the SOLID mapping and design decisions.
@@ -134,3 +134,57 @@ Checks cover the original foundation and strategy contracts plus floor-by-floor
 movement, FIFO service, both pickup directions, duplicate/current-floor stops,
 door safety, invalid input, paired-request completion, console logs, failure
 recovery, and 128 submissions overlapping processing with two processors.
+
+## Medium level: multiple elevators
+
+The medium API is `ElevatorSystem.ElevatorSystem` (the class shares the library's
+namespace). It owns 3–5 elevators, defaults to four, and serves floors 1–20.
+The easy API and its defaults remain unchanged.
+
+```csharp
+using ElevatorSystem;
+using Fleet = ElevatorSystem.ElevatorSystem;
+
+var system = new Fleet(4);
+system.SubmitRequest(new Request(3, 18));
+system.SubmitRequest(new Request(20, 1));
+await system.ProcessRequestsAsync();
+Console.WriteLine(system.GetStatus());
+```
+
+Run a concurrent 24-passenger example:
+
+```powershell
+dotnet run --project src/ElevatorSystem.Demo --no-launch-profile -- --medium
+```
+
+`SubmitRequest` adds to a synchronized central priority queue. Older Unix-millisecond
+timestamps go first; submission order breaks ties. `BalanceLoad` distributes that
+queue using fresh snapshots after each assignment. `FindBestElevator` is advisory;
+`AssignRequest` selects and enqueues atomically, bypassing central priority.
+Requests are immutable and contain pickup, destination, derived direction, timestamp,
+and an ID. Each submission is a trip; resubmitting the same object is not deduplicated.
+
+The default `OptimizedDispatchStrategy` estimates pickup delay from all queued travel
+and door steps, adds a four-step penalty per pending passenger, and favors a car
+moving toward the pickup in the same direction when estimated costs tie. Remaining
+ties use load and ID. This is a heuristic, not a guarantee of globally minimal wait.
+Trips retain FIFO pickup/destination pairs; passengers are not pooled or reassigned
+after dispatch. Balancing applies to central waiting requests, not onboard passengers.
+Inject an existing or custom `IElevatorSelectionStrategy` to change assignment.
+
+`ProcessRequestsAsync` runs one thread-pool worker per car and drains submitted work.
+Concurrent processing calls serialize. Submissions may overlap processing; those
+arriving after workers observe no work require another call. Optional `stepDelay`
+adds cancellable movement/door pacing. Cancellation preserves unfinished work for
+another processing call. This is a drain API, not a permanently running service.
+
+`Elevators`, `RequestQueue`, and `GetStatus()` return immutable snapshots, including
+floors, states, queued stops, submitted/completed totals, and pending counts. Owned
+cars are not exposed for external mutation. Assignment, movement, door actions,
+and trip completion are logged through `IElevatorLogger`; console logging is the
+default. Logger calls serialize outside the fleet lock. Cross-car log order is not
+physical event order. Logger failures propagate after committed transitions and
+are not retried; call processing again to finish remaining work. Loggers must not
+block waiting for processing or recursively invoke it. Queues remain unbounded;
+maintenance, stuck-car recovery, and durable storage are not implemented.

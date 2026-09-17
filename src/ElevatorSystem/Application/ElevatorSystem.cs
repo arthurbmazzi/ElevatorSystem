@@ -100,19 +100,22 @@ public sealed class ElevatorSystem
                 {
                     cancellationToken.ThrowIfCancellationRequested();
                     ElevatorAction? action;
+                    bool completed;
                     lock (_sync)
                     {
                         BalanceLoad();
                         int before = elevator.PendingRequestCount;
                         action = elevator.ProcessNextStep();
                         _completed += before - elevator.PendingRequestCount;
-                        if (before > elevator.PendingRequestCount)
-                            _events.Enqueue(new ElevatorAction(elevator.Id, elevator.CurrentFloor,
-                                elevator.State, "Passenger trip completed"));
+                        completed = before > elevator.PendingRequestCount;
                     }
                     FlushEvents();
                     if (action is null) return;
-                    lock (_logging) _logger.Log(action);
+                    lock (_logging)
+                    {
+                        _logger.Log(action);
+                        if (completed) _logger.Log(action with { Description = "Passenger trip completed" });
+                    }
                     if (_stepDelay > TimeSpan.Zero)
                         await Task.Delay(_stepDelay, cancellationToken).ConfigureAwait(false);
                 }

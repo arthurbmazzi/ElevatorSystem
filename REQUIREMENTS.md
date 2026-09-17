@@ -62,7 +62,7 @@ skeleton already satisfies them.
 ## Difficulty levels
 
 1. Easy: single elevator system (specified below).
-2. Awaiting the user's specification.
+2. Medium: multiple elevator system (specified below).
 3. Awaiting the user's specification.
 
 ## Easy level: single elevator system
@@ -94,3 +94,17 @@ skeleton already satisfies them.
 
 Maintenance, timed movement, stuck-elevator timeouts, and advanced dispatch remain
 outside the easy-level scope. Performance targets remain to be benchmarked.
+
+## Medium level: multiple elevator system
+
+- 3–5 elevators serving floors 1–20.
+- Intelligent dispatch using closest pickup, same-direction priority, queued travel,
+  and load balancing to reduce wait time.
+- Concurrent passenger submissions and multi-threaded elevator processing.
+- Thread-safe assignment, movement, queues, and status.
+- Timestamp-based request prioritization.
+- ElevatorSystem exposes AssignRequest, FindBestElevator, and BalanceLoad.
+- Request contains pickup floor, destination floor, direction, and timestamp.
+- Comprehensive action logging and fleet status reporting.
+
+The third level remains unspecified.

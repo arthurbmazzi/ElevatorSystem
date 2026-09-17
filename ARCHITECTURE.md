@@ -123,3 +123,35 @@ stops. This verifies that logging holds neither assignment nor domain locks.
 
 Run `dotnet build ElevatorSystem.sln` and
 `dotnet run --project tests/ElevatorSystem.Checks` from the repository root.
+
+## Medium-level architecture
+
+`ElevatorSystem` adds fleet coordination without changing the easy controller.
+It owns the cars and returns immutable scheduling/status snapshots so external
+movement cannot invalidate dispatch assumptions. A private fleet lock protects the
+central priority queue, selection plus enqueue, counters, and individual car steps.
+Lock order is fleet then domain. One asynchronous semaphore serializes drain calls;
+per-car thread-pool workers permit independent progress. No delay or logger callback
+runs under the fleet lock. A separate logger lock serializes callbacks. Code never
+acquires that logger lock while holding the fleet lock.
+
+`OptimizedDispatchStrategy` implements the existing strategy port. It models FIFO
+route distance and two door transitions per queued stop, adds a load penalty, and
+uses same-direction approach as a tie preference. Route snapshots extend the existing
+three-field snapshot compatibly. Factory construction and domain transitions reuse
+the existing implementation. Central priority uses timestamp then arrival sequence;
+already dispatched trips retain FIFO ordering. This avoids unsafe reassignment of
+onboard passengers, at the cost of not pooling compatible trips.
+
+A failed policy leaves the current central queue head untouched; earlier successful
+assignments stay committed. Cancellation and logging failure preserve committed
+state, release processing ownership, and allow later resumption. Other car workers
+may finish before a worker failure is surfaced by Task.WhenAll. Assignment logs are
+buffered until processing. Status counters are fleet-wide atomic observations.
+The worker lifetime is bounded by queue draining, so callers must invoke processing
+again for submissions after all workers become idle.
+
+Medium checks exercise 3–5 cars, bounds, estimated-route and direction selection,
+oldest-first priority, even identical-load distribution, cancellation/resumption,
+invalid policy atomicity, and submissions overlapping workers and two drain calls.
+The 100 ms assignment target remains unbenchmarked.
