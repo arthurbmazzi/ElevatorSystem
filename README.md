@@ -21,6 +21,32 @@ The demo serves floors **3 → 8 → 6 → 1**, opening and closing the doors at
 stop, then finishes at floor 1 in `IDLE`. The checks are a standalone console
 runner that exits with a failure when an assertion fails.
 
+### Interactive console
+
+```powershell
+dotnet run --project src/ElevatorSystem.Demo -- --interactive
+```
+
+Commands follow the API naming and are case-insensitive. Use UP or DOWN for direction. Type one command per line, for example:
+
+```text
+RequestElevator 3 UP
+RequestDestination 8
+Status
+ProcessRequests
+RequestElevator 6 DOWN
+RequestDestination 1
+ProcessRequests
+Exit
+```
+
+`RequestElevator` queues a pickup, and `RequestDestination` queues a destination (floors 1–10).
+`ProcessRequests` serves the FIFO queue and prints movement and door logs to the console.
+`Status` displays the current floor, state, and queue; `Help` lists commands.
+Invalid input prints an error and lets you try again. Processing is synchronous,
+without real-time delays; enter the next command after processing finishes.
+Running without `--interactive` preserves the fixed demo above.
+
 ## Easy-level API
 
 ```csharp
