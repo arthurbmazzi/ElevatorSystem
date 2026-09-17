@@ -61,6 +61,36 @@ skeleton already satisfies them.
 
 ## Difficulty levels
 
-1. Awaiting the user's specification.
+1. Easy: single elevator system (specified below).
 2. Awaiting the user's specification.
 3. Awaiting the user's specification.
+
+## Easy level: single elevator system
+
+- The default system has one elevator serving floors 1–10, starting at floor 1.
+- Simulate upward and downward movement one floor at a time.
+- Use `IDLE`, `MOVING_UP`, `MOVING_DOWN`, and `DOOR_OPEN`. Other existing enum
+  values are reserved for later levels.
+- Accept pickup calls containing a floor and direction, and separate destination
+  floor selections. Reject out-of-range floors, undefined directions, UP at floor
+  10, and DOWN at floor 1 without modifying the queue.
+- Serve floor requests strictly FIFO, including duplicate and current-floor
+  requests. Direction describes passenger intent; it does not reorder stops.
+- Open and close the doors at every queued stop; finish in `IDLE` with doors closed.
+- Expose elevator movement, door controls, request addition, and read-only target
+  floors. Use C# PascalCase names (`MoveUp`, `RequestElevator`, etc.).
+- `ElevatorController.RequestElevator(floor, direction)` queues a pickup;
+  `RequestDestination(floor)` queues a destination; `ProcessRequests()` synchronously
+  drains requests. No real-time sleeps or background workers are required.
+- Log movement and door actions through an injectable logging abstraction, with
+  console output in the default easy-level configuration.
+- Preserve the earlier constructors and paired passenger requests. A paired
+  request adds pickup then destination together to the FIFO queue.
+- Keep assignment and state transitions thread-safe; serialize processors without
+  holding the assignment lock for a whole trip or during logging. Requests arriving
+  after a processor observes an empty queue wait for the next processing call.
+- Verify movement, door safety, FIFO order, invalid input, logging, and concurrent
+  request handling. Make one implementation commit for this level.
+
+Maintenance, timed movement, stuck-elevator timeouts, and advanced dispatch remain
+outside the easy-level scope. Performance targets remain to be benchmarked.

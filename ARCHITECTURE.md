@@ -1,34 +1,37 @@
 # Architecture and engineering decisions
 
-This refactoring preserves the request-assignment foundation. It adds no movement,
-door behavior, timeouts, or requirements for the three unspecified levels.
+The easy level extends the request-assignment foundation with single-elevator
+movement, FIFO stops, door transitions, and logging. The next two levels remain
+unspecified; timeouts and maintenance are not implemented yet.
 
 ## Clean architecture
 
-The library has three logical areas, with the existing `ElevatorSystem` namespace
+The library has four logical areas, with the existing `ElevatorSystem` namespace
 and constructor preserved for compatibility:
 
 | Area | Responsibility | Dependencies |
 | --- | --- | --- |
-| `Domain` | Elevator queue ownership, passenger requests, enums, floor invariants | .NET only |
-| `Application` | Validate and coordinate atomic assignment; define and implement selection policies | Domain and the selection contract |
+| `Domain` | Elevator queues, movement/door invariants, immutable action records, passenger requests, floor bounds | .NET only |
+| `Application` | Coordinate assignment and processing; define selection and logging contracts | Domain and application contracts |
 | `Composition` | Wire the default or injected policy and construct a fresh fleet | Domain and application |
+| `Infrastructure` | Write action records to the console | Application logging contract and domain records |
 
 These are logical boundaries within one assembly, not compiler-enforced project
 boundaries. Constructor wiring lives in a composition partial of the controller to
 retain its public API; its application partial contains the use case. This is a
-pragmatic compatibility compromise, not complete assembly-level isolation. No
-infrastructure project is needed until there is an actual external dependency.
+pragmatic compatibility compromise, not complete assembly-level isolation. The
+console adapter lives in an infrastructure folder; a separate project is not
+needed for this small example. The demo is a separate executable project.
 
 ## SOLID applied
 
 | Principle | Concrete application |
 | --- | --- |
-| Single responsibility | `FloorRange` validates bounds; `Elevator` owns its queue; the factory constructs fleets; strategies select; the controller coordinates assignment. |
+| Single responsibility | `FloorRange` validates bounds; `Elevator` owns state and FIFO stops; the factory constructs fleets; strategies select; the controller coordinates; the logger writes actions. |
 | Open/closed | Add an `IElevatorSelectionStrategy` implementation and inject it without changing `SubmitRequest`. |
 | Liskov substitution | Both built-in policies accept the same request and snapshot contract and return a candidate ID. Contract checks cover ties, singleton fleets, and invalid inputs. An invalid ID is rejected before mutation. |
-| Interface segregation | The strategy has one selection method and receives only ID, current floor, and queue count. It has no movement, persistence, or queue mutation API. |
-| Dependency inversion | Assignment depends on `IElevatorSelectionStrategy`. The composition code chooses the concrete default; callers may inject another policy. |
+| Interface segregation | Selection and logging are separate one-method contracts. A logger needs only the immutable action; a strategy has no movement or queue mutation API. |
+| Dependency inversion | Assignment depends on `IElevatorSelectionStrategy` and processing depends on `IElevatorLogger`. Composition supplies concrete implementations. Domain code never calls console I/O. |
 
 SOLID does not require an interface on every class. Domain objects remain concrete,
 and the factory has no interface because construction currently has one policy.
@@ -44,8 +47,21 @@ assignment use case and avoids shared elevator ownership across controllers.
 preserves the previous algorithm and explicitly breaks ties by ID, independent of
 input ordering. `NearestPickupStrategy` demonstrates replacement using pickup
 distance, with `long` arithmetic to avoid overflow across integer floor limits.
-It is opt-in and is not a load-balancing or trip-time optimizer. All elevators
-currently remain at the minimum floor, so its ties select ID 0.
+It is opt-in and is not a load-balancing or trip-time optimizer. The easy level has
+only one elevator, so car selection is trivial; the existing strategy extension
+point remains available for subsequent levels.
+
+Stop ordering and car selection are distinct. `Queue<FloorStop>` implements the
+easy level's strict FIFO order without another strategy interface for a single
+policy. Stops retain optional pickup direction. A paired `PassengerRequest` adds
+two adjacent stops atomically, with completion recorded on the destination stop.
+The original paired-request snapshot stays available until completion; pending
+counts include standalone calls and count each paired request once.
+
+`IElevatorLogger` is an application output port, with console and no-op adapters.
+The easy constructor defaults to console logging; existing configurable
+constructors stay quiet. Action records contain the floor and state from the
+transition, so logging does not have to reread mutable elevator state.
 
 Clean code changes centralize duplicated floor validation, keep methods focused,
 use immutable request and snapshot types, and name policy decisions explicitly.
@@ -55,8 +71,26 @@ Comments describe contracts and ownership rather than narrating each statement.
 
 The controller holds its assignment lock while taking immutable snapshots,
 selecting an ID, validating membership, and enqueueing. This prevents concurrent
-submissions from selecting against stale queue counts. Elevator queue locks are
-always taken inside the controller lock; elevators never call back outward.
+submissions from selecting against stale queue counts. Processing also takes this
+lock for each atomic simulation step. Controller operations acquire locks in
+controller-to-elevator order; direct elevator methods take only the domain lock.
+Elevators never call back outward. Individual floor and state reads are locked;
+action records capture both values atomically for a transition.
+
+One processing lock serializes `ProcessRequests` callers. Each step moves one
+floor, opens doors at the head stop, or closes doors and completes that stop.
+The active stop remains queued until closure. Logging runs outside assignment and
+domain locks, but inside the processing lock to preserve action order. This permits
+concurrent submissions while logging. Recursive processing is rejected. Loggers
+must not wait for another processor, since that caller waits on the processing lock.
+When a logger throws, processing releases its lock and propagates the error; the
+completed domain transition remains committed, and a later call resumes the queue.
+There is no delivery retry or durable log guarantee in this simulation.
+
+Direct movement and door methods are atomic simulation primitives, not an
+independent worker loop. Each move finishes at the next floor; opening doors stops
+there immediately. The controller owns the normal service sequence. Empty-queue
+observation ends processing; submissions after that observation await another call.
 
 A strategy receives a read-only collection of immutable records, not live
 elevators. It must be fast, deterministic, free of side effects and blocking I/O,
@@ -79,6 +113,13 @@ simultaneous-caller coverage. Added checks exercise both strategies, explicit
 tie-breaking with unsorted IDs, extreme floor distances, injected policy behavior,
 snapshot isolation, failures before mutation, recovery, independent fleets, and
 alternate-policy concurrent submission.
+
+`EasyLevelChecks` additionally verifies exact FIFO stop order, one-floor movement,
+both directions, door interlocks and bounds, duplicate/current-floor calls,
+paired-request completion, logging failure recovery, and actual console output.
+A gated logger blocks a processing call while 128 requests are submitted, then
+two processors drain the captured queue with no lost, duplicated, or reordered
+stops. This verifies that logging holds neither assignment nor domain locks.
 
 Run `dotnet build ElevatorSystem.sln` and
 `dotnet run --project tests/ElevatorSystem.Checks` from the repository root.

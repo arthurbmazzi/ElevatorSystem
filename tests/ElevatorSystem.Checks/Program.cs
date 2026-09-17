@@ -122,6 +122,7 @@ Check(nearestController.Elevators[0].PendingRequestCount == 128,
     "Alternate strategy works under concurrent submission");
 
 Console.WriteLine("All foundation and architecture checks passed, including 128 simultaneous callers and alternate-policy concurrency.");
+EasyLevelChecks.Run();
 
 static void Check(bool condition, string description)
 {
