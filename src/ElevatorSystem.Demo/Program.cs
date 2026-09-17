@@ -1,5 +1,18 @@
 using ElevatorSystem;
 
+if (args.Length == 1 && args[0] == "--medium")
+{
+    var system = new ElevatorSystem.ElevatorSystem();
+    await Task.WhenAll(Enumerable.Range(0, 24).Select(i => Task.Run(() =>
+        system.SubmitRequest(new Request(i % 10 + 1, 20 - i % 10)))));
+    await system.ProcessRequestsAsync();
+    var status = system.GetStatus();
+    Console.WriteLine($"Completed: {status.CompletedRequests}/{status.SubmittedRequests}; pending: {status.PendingRequests}");
+    foreach (var car in status.Elevators)
+        Console.WriteLine($"Elevator {car.Id}: floor {car.CurrentFloor}, {car.State}");
+    return;
+}
+
 var controller = new ElevatorController();
 if (args.Length == 1 && args[0] == "--interactive")
 {
@@ -8,7 +21,7 @@ if (args.Length == 1 && args[0] == "--interactive")
 }
 if (args.Length != 0)
 {
-    Console.Error.WriteLine("Usage: dotnet run --project src/ElevatorSystem.Demo -- [--interactive]");
+    Console.Error.WriteLine("Usage: dotnet run --project src/ElevatorSystem.Demo -- [--interactive|--medium]");
     Environment.ExitCode = 1;
     return;
 }

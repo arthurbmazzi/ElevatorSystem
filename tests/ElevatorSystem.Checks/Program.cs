@@ -123,6 +123,7 @@ Check(nearestController.Elevators[0].PendingRequestCount == 128,
 
 Console.WriteLine("All foundation and architecture checks passed, including 128 simultaneous callers and alternate-policy concurrency.");
 EasyLevelChecks.Run();
+await MediumLevelChecks.RunAsync();
 
 static void Check(bool condition, string description)
 {
