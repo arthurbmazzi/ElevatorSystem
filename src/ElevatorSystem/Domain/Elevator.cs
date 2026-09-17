@@ -8,6 +8,7 @@ public sealed class Elevator
 {
     private readonly object _sync = new();
     private readonly Queue<PassengerRequest> _pendingRequests = new();
+    private readonly FloorRange _floors;
 
     public int Id { get; }
     public int MinFloor { get; }
@@ -18,14 +19,8 @@ public sealed class Elevator
     public Elevator(int id, int minFloor, int maxFloor, int initialFloor)
     {
         ArgumentOutOfRangeException.ThrowIfNegative(id);
-        if (minFloor >= maxFloor)
-        {
-            throw new ArgumentException("A building must have at least two floors.", nameof(maxFloor));
-        }
-        if (initialFloor < minFloor || initialFloor > maxFloor)
-        {
-            throw new ArgumentOutOfRangeException(nameof(initialFloor), "Initial floor is outside building limits.");
-        }
+        _floors = new FloorRange(minFloor, maxFloor);
+        _floors.Validate(initialFloor, nameof(initialFloor));
 
         Id = id;
         MinFloor = minFloor;
@@ -56,12 +51,7 @@ public sealed class Elevator
     // Assignment is controlled by ElevatorController, not exposed to callers.
     internal void Enqueue(PassengerRequest request)
     {
-        ArgumentNullException.ThrowIfNull(request);
-        if (request.PickupFloor < MinFloor || request.PickupFloor > MaxFloor
-            || request.DestinationFloor < MinFloor || request.DestinationFloor > MaxFloor)
-        {
-            throw new ArgumentOutOfRangeException(nameof(request), "Request is outside building limits.");
-        }
+        _floors.Validate(request);
 
         lock (_sync)
         {

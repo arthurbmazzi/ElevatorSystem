@@ -4,6 +4,10 @@ C# / .NET 8 foundation for an exercise that will grow through three difficulty
 levels. The original specifications are saved in [REQUIREMENTS.md](REQUIREMENTS.md).
 The user will define each level before its implementation.
 
+Engineering guidelines are included in the requirements. See
+[ARCHITECTURE.md](ARCHITECTURE.md) for the clean architecture boundaries, SOLID
+mapping, factory and strategy decisions, and concurrency contracts.
+
 ## Initial classes
 
 - `ElevatorState` and `Direction` contain the exact specified enum values.
@@ -13,6 +17,11 @@ The user will define each level before its implementation.
 - `ElevatorController` creates the fleet, validates building floor limits, and
   atomically assigns requests to the elevator with the fewest queued requests.
   Ties go to the lowest ID. Each elevator preserves request arrival order.
+- `FloorRange` centralizes inclusive floor validation.
+- `ElevatorFactory` constructs a fresh fleet with consecutive IDs.
+- `IElevatorSelectionStrategy` allows changing assignment policy. The default is
+  `ShortestQueueStrategy`; `NearestPickupStrategy` is an optional example that
+  chooses the closest current floor, breaking ties by ID.
 
 Negative floors are supported. Floor limits are inclusive. All elevators start
 at the minimum floor, in `IDLE`. Invalid arguments raise `ArgumentException`
@@ -43,6 +52,16 @@ Elevator assigned = controller.Elevators[elevatorId];
 Console.WriteLine(assigned.PendingRequestCount); // 1
 ```
 
+Select an alternative policy through constructor injection:
+
+```csharp
+var controller = new ElevatorController(2, -1, 10, new NearestPickupStrategy());
+```
+
+Nearest pickup ignores queued travel and can concentrate requests on one elevator.
+Since this foundation has no movement, all elevators remain at the same floor,
+so this policy currently selects ID 0. Shortest queue remains the default.
+
 ## Build and check
 
 Requires a .NET SDK supporting .NET 8. No external packages are used.
@@ -54,3 +73,6 @@ dotnet run --project tests/ElevatorSystem.Checks
 
 The checks are a standalone console runner that exits with a failure if an
 assertion fails; they do not require a test framework or NuGet test packages.
+They also cover strategy substitution, tie breaking, integer-distance bounds,
+immutable scheduling snapshots, policy failures and recovery, independent fleets,
+and concurrent submissions with both built-in policies.
