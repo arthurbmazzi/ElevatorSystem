@@ -1,25 +1,32 @@
 # Elevator System — Interview Exercise
 
-C# / .NET 8 implementation of the **easy and medium elevator-system levels**.
+C# / .NET 8 implementation of the **easy, medium and hard elevator-system levels**.
 The elevator starts at floor 1 in `IDLE`, serves floor requests in FIFO order, and
 logs each movement and door transition. The medium level adds 3–5 elevators serving floors 1–20.
 
 See [REQUIREMENTS.md](REQUIREMENTS.md) for requirements and engineering guidelines,
 and [ARCHITECTURE.md](ARCHITECTURE.md) for the SOLID mapping and design decisions.
 
+The hard implementation, APIs, policies, metrics, limitations and xUnit migration
+are explained in Portuguese in [HARD_LEVEL.md](HARD_LEVEL.md).
+
+```powershell
+dotnet run --project src/ElevatorSystem.Demo --no-launch-profile -- --hard
+dotnet run --project src/ElevatorSystem.Demo --no-launch-profile -- --benchmark
+```
+
 ## Run
 
-Requires a .NET SDK supporting .NET 8. No external packages are used.
+Requires a .NET SDK supporting .NET 8. The library has no external packages; the test project uses xUnit and Microsoft.NET.Test.Sdk.
 
 ```powershell
 dotnet build ElevatorSystem.sln
 dotnet run --project src/ElevatorSystem.Demo --no-launch-profile
-dotnet run --project tests/ElevatorSystem.Checks
+dotnet test ElevatorSystem.sln -m:1
 ```
 
 The demo serves floors **3 → 8 → 6 → 1**, opening and closing the doors at each
-stop, then finishes at floor 1 in `IDLE`. The checks are a standalone console
-runner that exits with a failure when an assertion fails.
+stop, then finishes at floor 1 in `IDLE`. Tests are discovered by xUnit and can also run in Visual Studio Test Explorer.
 
 ### Interactive console
 
@@ -130,7 +137,7 @@ maintenance handling, or stuck-elevator timeout implementation. Reserved enum
 values remain for compatibility. Queues are unbounded, and the 100 ms assignment
 target has not been benchmarked.
 
-Checks cover the original foundation and strategy contracts plus floor-by-floor
+xUnit tests cover the original foundation and strategy contracts plus floor-by-floor
 movement, FIFO service, both pickup directions, duplicate/current-floor stops,
 door safety, invalid input, paired-request completion, console logs, failure
 recovery, and 128 submissions overlapping processing with two processors.

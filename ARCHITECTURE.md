@@ -1,8 +1,11 @@
 # Architecture and engineering decisions
 
+For the hard-level coordinator, routing, lifecycle, operational safety, metrics,
+bounded histories and xUnit migration, see [HARD_LEVEL.md](HARD_LEVEL.md).
+The legacy architecture below documents the preserved foundation/easy/medium APIs.
+
 The easy level extends the request-assignment foundation with single-elevator
-movement, FIFO stops, door transitions, and logging. The next two levels remain
-unspecified; timeouts and maintenance are not implemented yet.
+movement, FIFO stops, door transitions, and logging. Medium and hard levels extend this foundation through separate coordinators.
 
 ## Clean architecture
 
@@ -114,7 +117,7 @@ tie-breaking with unsorted IDs, extreme floor distances, injected policy behavio
 snapshot isolation, failures before mutation, recovery, independent fleets, and
 alternate-policy concurrent submission.
 
-`EasyLevelChecks` additionally verifies exact FIFO stop order, one-floor movement,
+`EasyLevelTests` additionally verifies exact FIFO stop order, one-floor movement,
 both directions, door interlocks and bounds, duplicate/current-floor calls,
 paired-request completion, logging failure recovery, and actual console output.
 A gated logger blocks a processing call while 128 requests are submitted, then
@@ -122,7 +125,7 @@ two processors drain the captured queue with no lost, duplicated, or reordered
 stops. This verifies that logging holds neither assignment nor domain locks.
 
 Run `dotnet build ElevatorSystem.sln` and
-`dotnet run --project tests/ElevatorSystem.Checks` from the repository root.
+`dotnet test ElevatorSystem.sln -m:1` from the repository root.
 
 ## Medium-level architecture
 

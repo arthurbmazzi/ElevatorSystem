@@ -1,5 +1,56 @@
 using ElevatorSystem;
 
+if (args.Length == 1 && args[0] == "--benchmark")
+{
+    foreach (var routing in new IStopSchedulingStrategy[] { new FifoStopSchedulingStrategy(), new LookStopSchedulingStrategy() })
+    {
+        var system = new EnterpriseElevatorSystem(EnterpriseFleetFactory.CreateDefault(), routing);
+        var access = new AccessProfile(Enumerable.Range(1, 20));
+        // Fixed timestamps keep the workload order identical despite concurrent arrival.
+        var requests = Enumerable.Range(0, 128).Select(i => new EnterpriseRequest(
+            new Request(i % 10 + 1, 20 - i % 10, i), access)).ToArray();
+        var submissionMs = new double[requests.Length];
+        await Task.WhenAll(requests.Select((request, i) => Task.Run(() =>
+        {
+            var watch = System.Diagnostics.Stopwatch.StartNew();
+            system.SubmitRequest(request);
+            submissionMs[i] = watch.Elapsed.TotalMilliseconds;
+        })));
+        var processing = System.Diagnostics.Stopwatch.StartNew();
+        await system.ProcessRequestsAsync();
+        processing.Stop();
+        var metrics = system.GetAnalytics();
+        Console.WriteLine($"{routing.GetType().Name}: completed={metrics.Completed}; pending={metrics.Pending}; " +
+            $"wait avg/P95={metrics.AverageWaitTicks:F2}/{metrics.P95WaitTicks:F2} ticks; distance={metrics.FloorsTravelled}; " +
+            $"assignment avg/max={metrics.AverageAssignmentMilliseconds:F3}/{metrics.MaxAssignmentMilliseconds:F3} ms; " +
+            $"submission max={submissionMs.Max():F3} ms; processing={processing.Elapsed.TotalMilliseconds:F2} ms");
+    }
+    return;
+}
+
+if (args.Length == 1 && args[0] == "--hard")
+{
+    var system = new EnterpriseElevatorSystem(EnterpriseFleetFactory.CreateDefault());
+    var access = new AccessProfile(Enumerable.Range(1, 20));
+    system.SubmitRequest(new EnterpriseRequest(new Request(3, 9), access));
+    system.SubmitRequest(new EnterpriseRequest(new Request(1, 20), new AccessProfile(new[] { 1, 20 }, true)));
+    system.SubmitRequest(new EnterpriseRequest(new Request(1, 10), access, TransportKind.Freight, 1500));
+    system.ProcessTick();
+    system.EmergencyStop(2);
+    system.RequestMaintenance(0);
+    await system.ProcessRequestsAsync();
+    system.ResumeService(2);
+    system.ResumeService(0);
+    await system.ProcessRequestsAsync();
+    foreach (var entry in system.Events)
+        Console.WriteLine($"Tick {entry.Tick}: {entry.Name}; car={entry.ElevatorId}; floor={entry.Floor}; state={entry.State}; mode={entry.Mode}; request={entry.RequestId}");
+    var metrics = system.GetAnalytics();
+    Console.WriteLine($"Completed: {metrics.Completed}/{metrics.Submitted}; pending: {metrics.Pending}");
+    Console.WriteLine($"Wait avg/P95: {metrics.AverageWaitTicks:F2}/{metrics.P95WaitTicks:F2} ticks; travel avg: {metrics.AverageTravelTicks:F2} ticks");
+    Console.WriteLine($"Floors travelled: {metrics.FloorsTravelled}; assignment avg/max: {metrics.AverageAssignmentMilliseconds:F3}/{metrics.MaxAssignmentMilliseconds:F3} ms");
+    return;
+}
+
 if (args.Length == 1 && args[0] == "--medium")
 {
     var system = new ElevatorSystem.ElevatorSystem();
@@ -21,7 +72,7 @@ if (args.Length == 1 && args[0] == "--interactive")
 }
 if (args.Length != 0)
 {
-    Console.Error.WriteLine("Usage: dotnet run --project src/ElevatorSystem.Demo -- [--interactive|--medium]");
+    Console.Error.WriteLine("Usage: dotnet run --project src/ElevatorSystem.Demo -- [--interactive|--medium|--hard|--benchmark]");
     Environment.ExitCode = 1;
     return;
 }

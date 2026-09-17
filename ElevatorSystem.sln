@@ -7,9 +7,11 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{827E0CD3-B72
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ElevatorSystem", "src\ElevatorSystem\ElevatorSystem.csproj", "{C42BC56C-FD17-4055-A545-9513BE7BB462}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ElevatorSystem.Checks", "tests\ElevatorSystem.Checks\ElevatorSystem.Checks.csproj", "{695A4E12-FE9D-4EFB-AB02-D6682A20E20C}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ElevatorSystem.Tests", "tests\ElevatorSystem.Tests\ElevatorSystem.Tests.csproj", "{695A4E12-FE9D-4EFB-AB02-D6682A20E20C}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ElevatorSystem.Demo", "src\ElevatorSystem.Demo\ElevatorSystem.Demo.csproj", "{E7B92A89-3E40-40DA-80D8-BE497C4FBB12}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{89AF42F7-A0FC-4B93-A3F4-7AA741399007}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -63,7 +65,7 @@ Global
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 		{C42BC56C-FD17-4055-A545-9513BE7BB462} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
-		{695A4E12-FE9D-4EFB-AB02-D6682A20E20C} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
+		{695A4E12-FE9D-4EFB-AB02-D6682A20E20C} = {89AF42F7-A0FC-4B93-A3F4-7AA741399007}
 		{E7B92A89-3E40-40DA-80D8-BE497C4FBB12} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 	EndGlobalSection
 EndGlobal

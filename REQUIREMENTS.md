@@ -63,7 +63,7 @@ skeleton already satisfies them.
 
 1. Easy: single elevator system (specified below).
 2. Medium: multiple elevator system (specified below).
-3. Awaiting the user's specification.
+3. Hard: advanced enterprise system (specified below).
 
 ## Easy level: single elevator system
 
@@ -107,4 +107,16 @@ outside the easy-level scope. Performance targets remain to be benchmarked.
 - Request contains pickup floor, destination floor, direction, and timestamp.
 - Comprehensive action logging and fleet status reporting.
 
-The third level remains unspecified.
+## Hard level: advanced enterprise system
+
+- Local, express and freight elevator types, with configured service floors and weight limits.
+- Planned maintenance, emergency stop and explicit recovery.
+- LOOK routing, with FIFO available for comparison; destination never precedes pickup.
+- Floor authorization independent of VIP dispatch priority; bounded VIP head start.
+- Monitoring, structured event history, wait/travel/throughput/utilization and real assignment latency.
+- Stuck-elevator timeout using an injectable monotonic clock.
+- Preserve previous public APIs and FIFO behavior for easy/medium.
+- Replace the console checks with discoverable xUnit tests for all levels.
+- Follow the supplied request.pdf and existing C#/.NET, SOLID and concurrency guidelines.
+
+Detailed policies, simulation limits and usage are documented in HARD_LEVEL.md.
