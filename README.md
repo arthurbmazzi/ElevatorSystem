@@ -1,5 +1,7 @@
 # Elevator System — Interview Exercise
 
+Ready-to-copy JSON files and a presentation walkthrough: [samples/README.md](samples/README.md).
+
 ## REST API and manual presentation
 
 ```powershell

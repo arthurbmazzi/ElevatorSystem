@@ -1,0 +1,6 @@
+{
+  "pickupFloor": 3,
+  "destinationFloor": 9,
+  "kind": "Passenger",
+  "weightKg": 75
+}

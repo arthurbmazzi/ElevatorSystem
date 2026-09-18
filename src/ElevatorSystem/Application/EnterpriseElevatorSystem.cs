@@ -40,8 +40,10 @@ public sealed class EnterpriseElevatorSystem
         if (historyLimit <= 0) throw new ArgumentOutOfRangeException(nameof(historyLimit));
         _stuckTimeout = stuckTimeout ?? TimeSpan.FromSeconds(30);
         if (_stuckTimeout <= TimeSpan.Zero) throw new ArgumentOutOfRangeException(nameof(stuckTimeout));
-        _clock = clock ?? TimeProvider.System; _routing = routing ?? new FifoStopSchedulingStrategy();
-        _maxPending = maxPending; _historyLimit = historyLimit;
+        _clock = clock ?? TimeProvider.System;
+        _routing = routing ?? new FifoStopSchedulingStrategy();
+        _maxPending = maxPending;
+        _historyLimit = historyLimit;
         _eventSink = eventSink;
         _cars = configs.Select(c => new Car(c)).ToList();
     }
@@ -50,7 +52,7 @@ public sealed class EnterpriseElevatorSystem
     {
         get { lock (_sync) return Array.AsReadOnly(_cars.Select(c => new EnterpriseElevatorSnapshot(
             c.Config.Id, c.Config.Type, c.Elevator.CurrentFloor, c.Elevator.State, c.Mode,
-            c.Direction, c.Trips.Count, c.Trips.Sum(t => t.Request.WeightKg))).ToArray()); }
+            c.Direction, c.Trips.Count, c.ReservedKg)).ToArray()); }
     }
 
     public IReadOnlyList<TripSnapshot> Trips
@@ -84,11 +86,16 @@ public sealed class EnterpriseElevatorSystem
 
     public void BalanceLoad() { lock (_sync) AssignWaiting(); }
 
-    private static bool Supports(Car car, EnterpriseRequest request) =>
-        (car.Config.Type == ElevatorType.Freight) == (request.Kind == TransportKind.Freight)
-        && car.Config.ServedFloors.Contains(request.Trip.PickupFloor)
-        && car.Config.ServedFloors.Contains(request.Trip.DestinationFloor)
-        && request.WeightKg <= car.Config.CapacityKg;
+    private static bool Supports(Car car, EnterpriseRequest request)
+    {
+        bool carriesCargo = car.Config.Type == ElevatorType.Freight;
+        bool needsCargoCar = request.Kind == TransportKind.Freight;
+        if (carriesCargo != needsCargoCar) return false;
+
+        return car.Config.ServedFloors.Contains(request.Trip.PickupFloor)
+            && car.Config.ServedFloors.Contains(request.Trip.DestinationFloor)
+            && request.WeightKg <= car.Config.CapacityKg;
+    }
 
     private void AssignWaiting()
     {
@@ -105,10 +112,14 @@ public sealed class EnterpriseElevatorSystem
                 .Select(c => c.Car).FirstOrDefault();
             if (car is null) continue; // An unavailable request must not block unrelated work.
             if (car.Trips.Count == 0) car.LastProgress = _clock.GetTimestamp();
-            trip.CarId = car.Config.Id; trip.State = TripState.Assigned; car.Trips.Add(trip);
+            trip.CarId = car.Config.Id;
+            trip.State = TripState.Assigned;
+            car.Trips.Add(trip);
             Emit("RequestAssigned", car.Config.Id, trip.Request.Trip.Id);
             double elapsed = Stopwatch.GetElapsedTime(started).TotalMilliseconds;
-            _assignmentCount++; _assignmentTotal += elapsed; _assignmentMax = Math.Max(_assignmentMax, elapsed);
+            _assignmentCount++;
+            _assignmentTotal += elapsed;
+            _assignmentMax = Math.Max(_assignmentMax, elapsed);
         }
     }
 
@@ -158,50 +169,94 @@ public sealed class EnterpriseElevatorSystem
             CheckTimeoutsCore();
             AssignWaiting();
             _tick++;
+
             bool progressed = false;
             foreach (var car in _cars)
             {
-                if (car.Mode is OperationalMode.Maintenance or OperationalMode.EmergencyStopped)
-                { _unavailable++; continue; }
-                if (car.Elevator.State == ElevatorState.DOOR_OPEN)
-                {
-                    car.Elevator.CloseDoor(); _doors++; Emit("DoorsClosed", car.Config.Id);
-                    Progress(car); progressed = true; FinishMaintenance(car); continue;
-                }
-                if (car.Trips.Count == 0) { _idle++; FinishMaintenance(car); continue; }
-                var decision = Decide(car.Elevator.CurrentFloor, car.Direction, Stops(car));
-                car.Direction = decision.Direction;
-                if (decision.Stop.Floor != car.Elevator.CurrentFloor)
-                {
-                    if (decision.Stop.Floor > car.Elevator.CurrentFloor) car.Elevator.MoveUp();
-                    else car.Elevator.MoveDown();
-                    _distance++; _moving++; Emit("Moved", car.Config.Id);
-                }
-                else
-                {
-                    var trip = car.Trips.Single(t => t.Request.Trip.Id == decision.Stop.RequestId);
-                    car.Elevator.OpenDoor(); _doors++; Emit("DoorsOpened", car.Config.Id);
-                    if (trip.State == TripState.Assigned)
-                    {
-                        trip.State = TripState.Onboard; trip.PickupTick = _tick; _pickups++;
-                        long wait = _tick - trip.SubmittedTick;
-                        _waitTotal += wait; _waitSamples.Enqueue(wait);
-                        if (_waitSamples.Count > _historyLimit) _waitSamples.Dequeue();
-                        Emit("PassengerPickedUp", car.Config.Id, trip.Request.Trip.Id);
-                    }
-                    else
-                    {
-                        trip.State = TripState.Completed; trip.CompletedTick = _tick; _completed++;
-                        _travelTotal += _tick - trip.PickupTick!.Value; car.Trips.Remove(trip);
-                        Emit("PassengerDroppedOff", car.Config.Id, trip.Request.Trip.Id);
-                        _completedIds.Enqueue(trip.Request.Trip.Id);
-                        if (_completedIds.Count > _historyLimit) _trips.Remove(_completedIds.Dequeue());
-                    }
-                }
-                Progress(car); progressed = true;
+                // Always advance every car, even after another car has made progress.
+                if (AdvanceCar(car)) progressed = true;
             }
             return progressed;
         }
+    }
+
+    // These helpers run under the fleet lock held by ProcessTick.
+    private bool AdvanceCar(Car car)
+    {
+        if (car.Mode is OperationalMode.Maintenance or OperationalMode.EmergencyStopped)
+        {
+            _unavailable++;
+            return false;
+        }
+        if (car.Elevator.State == ElevatorState.DOOR_OPEN)
+        {
+            car.Elevator.CloseDoor();
+            _doors++;
+            Emit("DoorsClosed", car.Config.Id);
+            Progress(car);
+            FinishMaintenance(car);
+            return true;
+        }
+        if (car.Trips.Count == 0)
+        {
+            _idle++;
+            FinishMaintenance(car);
+            return false;
+        }
+
+        var decision = Decide(car.Elevator.CurrentFloor, car.Direction, Stops(car));
+        car.Direction = decision.Direction;
+        if (decision.Stop.Floor != car.Elevator.CurrentFloor)
+            MoveToward(car, decision.Stop.Floor);
+        else
+            ServeStop(car, decision.Stop.RequestId);
+
+        Progress(car);
+        return true;
+    }
+
+    private void MoveToward(Car car, int floor)
+    {
+        if (floor > car.Elevator.CurrentFloor) car.Elevator.MoveUp();
+        else car.Elevator.MoveDown();
+        _distance++;
+        _moving++;
+        Emit("Moved", car.Config.Id);
+    }
+
+    private void ServeStop(Car car, Guid requestId)
+    {
+        var trip = car.Trips.Single(t => t.Request.Trip.Id == requestId);
+        car.Elevator.OpenDoor();
+        _doors++;
+        Emit("DoorsOpened", car.Config.Id);
+
+        if (trip.State == TripState.Assigned) PickUp(car, trip);
+        else DropOff(car, trip);
+    }
+
+    private void PickUp(Car car, Trip trip)
+    {
+        trip.State = TripState.Onboard;
+        trip.PickupTick = _tick;
+        _pickups++;
+        long wait = _tick - trip.SubmittedTick;
+        _waitTotal += wait;
+        _waitSamples.Enqueue(wait);
+        if (_waitSamples.Count > _historyLimit) _waitSamples.Dequeue();
+        Emit("PassengerPickedUp", car.Config.Id, trip.Request.Trip.Id);
+    }
+
+    private void DropOff(Car car, Trip trip)
+    {
+        trip.State = TripState.Completed;
+        trip.CompletedTick = _tick;
+        _completed++;
+        _travelTotal += _tick - trip.PickupTick!.Value;
+        car.Trips.Remove(trip);
+        Emit("PassengerDroppedOff", car.Config.Id, trip.Request.Trip.Id);
+        _completedIds.Enqueue(trip.Request.Trip.Id);
+        if (_completedIds.Count > _historyLimit) _trips.Remove(_completedIds.Dequeue());
     }
 
     public async Task ProcessRequestsAsync(CancellationToken cancellationToken = default)
@@ -310,6 +365,7 @@ public sealed class EnterpriseElevatorSystem
         public OperationalMode Mode { get; set; }
         public Direction Direction { get; set; } = Direction.UP;
         public List<Trip> Trips { get; } = new();
+        public decimal ReservedKg => Trips.Sum(t => t.Request.WeightKg);
         public long LastProgress { get; set; }
     }
 

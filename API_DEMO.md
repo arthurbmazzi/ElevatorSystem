@@ -1,5 +1,7 @@
 # Swagger presentation guide
 
+Ready-to-copy JSON files and a presentation walkthrough: [samples/README.md](samples/README.md).
+
 ## Start the API
 
 From the repository root:

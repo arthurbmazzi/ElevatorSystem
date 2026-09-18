@@ -1,0 +1,6 @@
+{
+  "pickupFloor": 1,
+  "destinationFloor": 10,
+  "kind": "Freight",
+  "weightKg": 1500
+}

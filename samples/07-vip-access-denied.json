@@ -1,0 +1,11 @@
+{
+  "pickupFloor": 1,
+  "destinationFloor": 20,
+  "kind": "Passenger",
+  "weightKg": 75,
+  "isVip": true,
+  "allowedFloors": [
+    1,
+    2
+  ]
+}
