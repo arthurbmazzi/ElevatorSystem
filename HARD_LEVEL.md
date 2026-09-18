@@ -1,8 +1,8 @@
 # Hard level: implementation and decisions
 
 For Swagger presentations and TXT event logs, see [API_DEMO.md](API_DEMO.md).
-The API uses the same library with a 300-second timeout for manual pauses;
-the 30 seconds described below remain the library default.
+The API uses the same library with a 30-second timeout and automatic background
+steps every 500 ms. Both settings are configurable under Elevators in appsettings.json.
 
 The hard level uses `EnterpriseElevatorSystem`. The `ElevatorController` (easy)
 and `ElevatorSystem` (medium) coordinators retain their APIs and FIFO behavior.
@@ -127,8 +127,8 @@ the physical state in `State`; the legacy enum remains compatible.
   no progress for 30 seconds (configurable), then triggers an emergency stop.
 
 The watchdog is checked before each tick and can also be called by the host.
-There is no hidden timer: if neither simulation nor watchdog is called, detection
-cannot run autonomously. A prolonged real-time pause with assigned work counts as
+The library itself has no timer. The API supplies a hosted worker that calls
+ProcessTick periodically and therefore checks timeouts automatically. A prolonged real-time pause with assigned work counts as
 lack of progress; inject `TimeProvider` for controlled simulations and tests.
 The watchdog cannot interrupt a routing callback that blocks indefinitely. Routing
 policies must execute quickly and perform no I/O.

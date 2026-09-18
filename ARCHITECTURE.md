@@ -4,10 +4,10 @@
 
 `ElevatorSystem.Api` is a separate ASP.NET Core executable referencing the library.
 HTTP DTOs, Swagger and HTTP exception translation live in that project, outside the
-domain. A singleton `SimulationSession` owns one hard-level fleet with FIFO routing.
-Its command semaphore protects per-command event buffering and consistent responses;
-processing releases this gate between ticks so other commands can run. A separate
-processing semaphore coordinates full drains and resets.
+domain. A singleton `FleetSession` owns one hard-level fleet with FIFO routing.
+Its command semaphore protects per-command event buffering and consistent responses.
+One hosted `ElevatorWorker` advances the fleet periodically, releasing the command
+gate between steps so HTTP requests can run. There are no manual processing endpoints.
 
 The optional application port `IEnterpriseEventSink` captures events in memory under
 the fleet lock. The API flushes that buffer to a rotating TXT adapter after every

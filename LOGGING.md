@@ -16,14 +16,14 @@ path if launching from Visual Studio or another directory.
 
 Old files contain old runs and test inputs. Their errors do not automatically mean
 the current run is failing. Files and timestamps use UTC, which can differ from your
-local date. Resetting the simulation preserves the log files.
+local date. Restarting the API preserves the log files.
 
 ## The three steps
 
 1. The coordinator changes state and emits an event such as Moved or DoorsOpened.
 2. The API's IEnterpriseEventSink implementation puts that event in a memory queue.
    This is fast and does not access disk while the fleet lock is held.
-3. After each command or tick, SimulationSession writes the queue to TXT and removes
+3. After each command or tick, FleetSession writes the queue to TXT and removes
    each entry only after its write succeeds. The file writer uses its own lock.
 
 The in-memory GET /events history keeps at most 1,000 events. The file buffer receives
@@ -71,9 +71,10 @@ The API returns **503 File logging unavailable** for commands affected by that f
 GET /logs/status remains available because it does not need the simulation command gate
 or a successful disk write.
 
-Restore access/free space or release the file lock, then issue a read command such as
-GET /analytics. The session first retries its buffered events. Once writing succeeds,
-lastWriteError clears and normal processing resumes. New commands do not change fleet
+Restore access/free space or release the file lock. The background worker retries
+buffered events at the next interval; GET /analytics also attempts a flush. Once writing succeeds,
+lastWriteError clears and normal processing resumes. Cars may time out if the write failure prevented progress
+for longer than the configured timeout; resume those cars explicitly. New commands do not change fleet
 state while a previous event remains unflushed.
 
 The command that originally failed may already have changed the fleet before its log

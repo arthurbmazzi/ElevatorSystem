@@ -15,5 +15,5 @@ public sealed class CreateTripCommand
         new AccessProfile(AllowedFloors, IsVip), Kind, WeightKg);
 }
 
-public sealed record SimulationStatus(EnterpriseAnalytics Analytics,
+public sealed record FleetOverview(EnterpriseAnalytics Analytics,
     IReadOnlyList<EnterpriseElevatorSnapshot> Elevators);

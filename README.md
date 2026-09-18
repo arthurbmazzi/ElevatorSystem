@@ -13,7 +13,7 @@ dotnet run --project src/ElevatorSystem.Api
 ```
 
 Open [Swagger](http://localhost:5080/swagger) to submit trips as JSON, inspect the
-fleet, advance the simulation, and trigger maintenance or emergency stops.
+fleet, observe automatic processing, and trigger maintenance or emergency stops.
 
 ### Visual Studio startup project
 
@@ -43,8 +43,8 @@ The easy and medium implementations remain in the library for their exercise lev
 dotnet test ElevatorSystem.sln -m:1
 ```
 
-With the API running, `node tests/api-smoke.mjs` verifies HTTP behavior and 128
-concurrent submissions. It resets the demonstration fleet before and after testing.
+With a fresh API instance running at a 10 ms step interval, `node tests/api-smoke.mjs`
+verifies HTTP behavior and 128 concurrent submissions. Restart the API afterward.
 This is a correctness smoke test, not a latency or memory benchmark.
 
 ## Earlier library levels

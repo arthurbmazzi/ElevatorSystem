@@ -126,7 +126,8 @@ Detailed policies, simulation limits and usage are documented in HARD_LEVEL.md.
 
 - Add an ASP.NET Core API and Swagger UI for JSON commands and fleet inspection.
 - Keep the hard-level features and FIFO routing in the shared library.
-- Use a singleton fleet with explicit tick/process commands, plus a demo reset.
+- Use a singleton fleet with automatic background processing and timeout checks.
+- Do not expose simulation, manual processing, or reset endpoints.
 - Persist diagnostic events to rotating TXT files outside the fleet lock.
 - Provide a concise manual presentation guide with request examples and expected results.
 - Use the API as the only application entry point; remove the console demo project.

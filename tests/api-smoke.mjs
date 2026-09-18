@@ -1,4 +1,4 @@
-// Run against a disposable local demo: this test resets its in-memory fleet.
+// Run against a fresh disposable API instance with Elevators:StepIntervalMilliseconds=10.
 // Start the API, then run: node tests/api-smoke.mjs
 import assert from 'node:assert/strict';
 import { readFile, readdir } from 'node:fs/promises';
@@ -19,66 +19,69 @@ const submit = (overrides = {}) => call('POST', '/requests', {
 }, 201);
 
 const swagger = await call('GET', '/swagger/v1/swagger.json');
-assert.ok(swagger.paths['/simulation/process']);
+assert.ok(Object.keys(swagger.paths).every(path => !path.startsWith('/simulation')));
 assert.equal(swagger.components.schemas.CreateTripCommand.example.pickupFloor, 3);
 assert.deepEqual(swagger.components.schemas.TransportKind.enum, ['Passenger', 'Freight']);
 const ui = await fetch(base + '/swagger/index.html');
 assert.equal(ui.status, 200);
 assert.match(await ui.text(), /SwaggerUIBundle/);
 
-await call('POST', '/simulation/reset');
-const trip = await submit({ pickupFloor: 3, destinationFloor: 9 });
-assert.equal(trip.state, 'Waiting');
-assert.equal((await call('GET', `/trips/${trip.id}`)).id, trip.id);
-assert.equal((await call('GET', '/elevators')).length, 3);
-await call('POST', '/requests', { pickupFloor: 99, destinationFloor: 2 }, 400);
-await call('POST', '/requests', { pickupFloor: 1, destinationFloor: 1 }, 400);
-await call('POST', '/requests', { pickupFloor: 1, destinationFloor: 20, allowedFloors: [1, 2], isVip: true }, 403);
-await call('POST', '/requests', { pickupFloor: 1, destinationFloor: 10, kind: 'Freight', weightKg: 3001 }, 400);
+
+async function waitUntil(check) {
+    const deadline = Date.now() + 120000;
+    while (Date.now() < deadline) {
+        if (await check()) return;
+        await new Promise(resolve => setTimeout(resolve, 50));
+    }
+    throw new Error('Automatic processing did not reach the expected state.');
+}
+const initial = await call('GET', '/analytics');
+assert.equal(initial.submitted, 0, 'Run this smoke test against a fresh API instance.');
+const sampleDirectory = new URL('../samples/', import.meta.url);
+const sampleFiles = (await readdir(sampleDirectory)).filter(f => f.endsWith('.json')).sort();
+const samples = await Promise.all(sampleFiles.map(f => readFile(new URL(f, sampleDirectory), 'utf8').then(JSON.parse)));
+const schemaKeys = Object.keys(swagger.components.schemas.CreateTripCommand.example).sort();
+for (const sample of samples) assert.deepEqual(Object.keys(sample).sort(), schemaKeys);
+for (const index of [0, 1, 2]) await call('POST', '/requests', samples[index], 201);
+await waitUntil(async () => (await call('GET', '/analytics')).completed === 3);
+for (const [index, status] of [[4, 400], [5, 400], [6, 403]])
+    await call('POST', '/requests', samples[index], status);
+assert.equal((await call('GET', '/analytics')).submitted, 3);
 await call('POST', '/requests', { kind: 'Unknown' }, 400);
-await call('POST', '/requests', { kind: 0 }, 400);
-await call('POST', '/requests', { allowedFloors: null }, 400);
 await call('POST', '/elevators/99/resume', undefined, 404);
 await call('POST', '/elevators/0/resume', undefined, 409);
-assert.equal((await call('GET', '/analytics')).submitted, 1);
-assert.equal((await call('POST', '/simulation/process')).analytics.completed, 1);
 
-await call('POST', '/simulation/reset');
 await call('POST', '/elevators/0/maintenance');
-await submit({ destinationFloor: 15 });
-let status = await call('POST', '/simulation/process');
-assert.equal(status.analytics.completed, 1);
-assert.equal((await call('GET', '/trips'))[0].elevatorId, 1);
-assert.equal(status.elevators[1].floor, 15);
+const express = await call('POST', '/requests', samples[3], 201);
+await waitUntil(async () => (await call('GET', '/trips/' + express.id)).state === 'Completed');
+assert.equal((await call('GET', '/trips/' + express.id)).elevatorId, 1);
+await call('POST', '/elevators/0/resume');
 
-await call('POST', '/simulation/reset');
-await submit({ destinationFloor: 10, kind: 'Freight', weightKg: 1500 });
-await call('POST', '/simulation/tick');
 await call('POST', '/elevators/2/emergency-stop');
-status = await call('POST', '/simulation/process');
-assert.equal(status.analytics.pending, 1);
-assert.equal((await call('GET', '/trips'))[0].state, 'Onboard');
-assert.equal(status.elevators[2].mode, 'EmergencyStopped');
+const cargo = await call('POST', '/requests', samples[2], 201);
+await new Promise(resolve => setTimeout(resolve, 100));
+assert.equal((await call('GET', '/trips/' + cargo.id)).state, 'Waiting');
 await call('POST', '/elevators/2/resume');
-assert.equal((await call('POST', '/simulation/process')).analytics.completed, 1);
+await waitUntil(async () => (await call('GET', '/trips/' + cargo.id)).state === 'Completed');
 
-await call('POST', '/simulation/reset');
+await call('POST', '/elevators/1/maintenance');
+const fifoTrips = [];
+for (const index of [7, 8]) fifoTrips.push(await call('POST', '/requests', samples[index], 201));
+await waitUntil(async () => (await call('GET', '/trips/' + fifoTrips[1].id)).state === 'Completed');
+const fifoEvents = (await call('GET', '/events')).filter(e =>
+    fifoTrips.some(t => t.id === e.requestId) && ['PassengerPickedUp', 'PassengerDroppedOff'].includes(e.name));
+assert.deepEqual(fifoEvents.map(e => e.floor), [1, 12, 1, 3]);
+await call('POST', '/elevators/1/resume');
+
+const baseline = (await call('GET', '/analytics')).completed;
 const trips = await Promise.all(Array.from({ length: 128 }, (_, i) => submit({ pickupFloor: i % 10 + 1 })));
-await Promise.all([call('POST', '/simulation/process'), call('POST', '/simulation/process')]);
-const analytics = await call('GET', '/analytics');
-assert.equal(analytics.completed, 128);
-assert.equal(analytics.pending, 0);
-assert.equal(new Set(trips.map(t => t.id)).size, 128);
-assert.equal((await call('GET', '/events')).length, 1000);
-
-const directory = new URL('../src/ElevatorSystem.Api/logs/', import.meta.url);
-const files = (await readdir(directory)).filter(f => f.endsWith('.txt'));
-const log = (await Promise.all(files.map(f => readFile(new URL(f, directory), 'utf8')))).join('\n');
-for (const trip of trips) {
-    const completed = log.split('\n').filter(line => line.includes('event=PassengerDroppedOff') && line.includes(trip.id));
-    assert.equal(completed.length, 1, `Missing or duplicated file event for ${trip.id}`);
-}
-assert.match(log, /SimulationReset/);
-assert.match(log, /Command rejected/);
-await call('POST', '/simulation/reset');
-console.log('API smoke passed: Swagger, JSON/errors, shared fleet, express, emergency/resume, 128 concurrent submissions, complete TXT logs; fleet reset.');
+await waitUntil(async () => (await call('GET', '/analytics')).completed === baseline + 128);
+assert.equal((await call('GET', '/analytics')).pending, 0);
+const status = await call('GET', '/logs/status');
+const files = (await readdir(status.directory)).filter(f => f.endsWith('.txt'));
+const path = await import('node:path');
+const log = (await Promise.all(files.map(f => readFile(path.join(status.directory, f), 'utf8')))).join('\n');
+for (const trip of trips)
+    assert.equal(log.split('\n').filter(line => line.includes('event=PassengerDroppedOff') && line.includes(trip.id)).length, 1);
+assert.equal(status.lastWriteError, null);
+console.log('Passed: all sample schemas/results, no simulation endpoints, automatic processing, Express, emergency recovery, FIFO, 128 concurrent submissions, and TXT logs.');

@@ -4,9 +4,9 @@
 
 This is an in-memory elevator simulator. You send a trip through Swagger, the API
 validates it, and a shared fleet keeps it waiting. Dispatch chooses a compatible
-car. Each car completes its assigned trips in FIFO order. You advance the simulation
-manually, one tick or a full processing run at a time. Events describe every change
-and are written to TXT files. There is no batch endpoint, database, or automatic movement.
+car. Each car completes its assigned trips in FIFO order. A hosted worker advances the fleet
+automatically every 500 ms. Events describe every change
+and are written to TXT files. There is no batch endpoint or database.
 
 ## Read the code in this order
 
@@ -14,7 +14,7 @@ and are written to TXT files. There is no batch endpoint, database, or automatic
 | --- | --- |
 | [Contracts.cs](src/ElevatorSystem.Api/Contracts.cs) | JSON becomes a validated domain request |
 | [Program.cs](src/ElevatorSystem.Api/Program.cs) | HTTP endpoints and error responses |
-| [SimulationSession.cs](src/ElevatorSystem.Api/SimulationSession.cs) | One shared fleet, command coordination, and log flushing |
+| [FleetSession.cs](src/ElevatorSystem.Api/FleetSession.cs) | One shared fleet, command coordination, and log flushing |
 | [EnterpriseFleetFactory.cs](src/ElevatorSystem/Composition/EnterpriseFleetFactory.cs) | The three default car configurations |
 | [EnterpriseElevatorSystem.cs](src/ElevatorSystem/Application/EnterpriseElevatorSystem.cs) | Admission, assignment, ticks, maintenance, and metrics |
 | [IStopSchedulingStrategy.cs](src/ElevatorSystem/Application/Scheduling/IStopSchedulingStrategy.cs) | FIFO selects the first trip's current stop |
@@ -29,7 +29,7 @@ and are written to TXT files. There is no batch endpoint, database, or automatic
 3. **Accept:** SubmitRequest checks floor permissions, compatible cars, duplicate IDs,
    and the pending limit. It stores a Waiting trip and emits RequestSubmitted.
 4. **Reply:** the API returns 201 with a trip ID. Acceptance does not mean assignment.
-5. **Assign:** /simulation/assign or the next tick calls AssignWaiting. A selected
+5. **Assign:** the next background step calls AssignWaiting. A selected
    car reserves weight and the trip becomes Assigned.
 6. **Pick up:** the car reaches the pickup floor and opens its doors. The trip becomes Onboard.
 7. **Drop off:** the car reaches the destination and opens its doors. The trip becomes Completed.
@@ -79,17 +79,16 @@ PickUp and DropOff update the trip lifecycle, counters, and event history. A tic
 not one real second. All cars get a turn in a tick, but the hard simulation uses a
 coordinated loop rather than one thread per car.
 
-/simulation/process repeats ticks until none of the cars can advance. It can return
-with pending trips when compatible cars are unavailable. The API yields between
-ticks so submissions and controls can run. Work submitted after the final check
-needs another processing call.
+ElevatorWorker calls ProcessTick periodically while the API is running. Blocked trips
+remain pending and are reconsidered on later steps. Resuming a car requires no
+additional processing command. The worker retries file-writing failures without
+terminating the host; its cancellation token stops it when the host shuts down.
 
 ## Why there are multiple locks
 
 | Protection | Purpose |
 | --- | --- |
-| SimulationSession command semaphore | Coordinates API commands, coherent responses, and its event buffer |
-| SimulationSession processor semaphore | Prevents overlapping full drains and reset during a drain |
+| FleetSession command semaphore | Coordinates API commands, coherent responses, and its event buffer |
 | EnterpriseElevatorSystem fleet lock | Makes selection, capacity reservation, transitions, and metrics consistent |
 | Elevator lock | Protects domain movement/door operations, including use outside the hard coordinator |
 | FileLogProvider lock | Prevents concurrent file writes and rotation from colliding |
@@ -98,7 +97,7 @@ A lock protects short synchronous work. A semaphore lets asynchronous callers wa
 The session releases its command gate between ticks. TXT I/O runs outside the fleet
 lock, although it still holds the session command gate and contributes to HTTP latency.
 The library also serializes its own ProcessRequestsAsync for callers using it directly;
-the API runs ProcessTick itself so it can flush logs after every tick.
+the API worker runs ProcessTick so it can flush logs after every step.
 
 Ordinary lists, queues, and dictionaries are safe here because access is coordinated.
 A ConcurrentDictionary alone would not make selecting a car and reserving its capacity
@@ -118,10 +117,9 @@ file and reports current write errors. Neither logs nor the event window restore
 - Emergency: stop future movement/door actions immediately between ticks; requeue only
   unboarded trips. Resume explicitly to continue onboard trips.
 - Timeout: detect assigned work with no progress using monotonic elapsed time; trigger
-  emergency. Default is 30 seconds in the library and 300 in the presentation API.
-  Detection runs on ticks or /simulation/check-timeouts, not in a background timer.
-- Reset: wait for active processing, recreate the fleet, clear in-memory trips/metrics,
-  preserve files, and log the reset.
+  emergency. The default is 30 seconds in both library and API. The background worker
+  checks on each step. A blocking callback cannot be interrupted by this watchdog.
+- Restart the application to clear in-memory state; there is no HTTP reset endpoint.
 
 ## Architecture and patterns to explain
 
@@ -141,7 +139,7 @@ coordinators remain for the earlier exercise levels; the REST API uses the hard 
 - Pending trips and histories are bounded. Assignment timing excludes queue/lock waiting
   and file writes, so it is not an end-to-end HTTP SLA.
 - File logs are diagnostic, not transactional or durable exactly-once storage.
-- Future work: batch submission, automatic processing/watchdog, persistence, real authorization,
+- Future work: batch submission, persistence, real authorization,
   and sustained latency/memory benchmarks. Batch submission is intentionally not implemented.
 
 ## Which document should I use?
