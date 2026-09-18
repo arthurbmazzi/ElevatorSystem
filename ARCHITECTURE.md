@@ -13,8 +13,7 @@ The optional application port `IEnterpriseEventSink` captures events in memory u
 the fleet lock. The API flushes that buffer to a rotating TXT adapter after every
 command/tick, outside the fleet lock. This avoids losing events when the bounded
 monitoring history expires. File writes are synchronous and part of HTTP latency;
-they are not included in the library's assignment timing. The console adapter stays
-available. See [API_DEMO.md](API_DEMO.md) for the manual presentation workflow.
+they are not included in the library's assignment timing. The legacy console logger remains a library adapter, not an executable application. See [API_DEMO.md](API_DEMO.md) for the manual presentation workflow.
 
 For the hard-level coordinator, routing, lifecycle, operational safety, metrics,
 bounded histories and xUnit migration, see [HARD_LEVEL.md](HARD_LEVEL.md).
@@ -40,7 +39,7 @@ boundaries. Constructor wiring lives in a composition partial of the controller 
 retain its public API; its application partial contains the use case. This is a
 pragmatic compatibility compromise, not complete assembly-level isolation. The
 console adapter lives in an infrastructure folder; a separate project is not
-needed for this small example. The demo is a separate executable project.
+needed for this small example. The API is the only executable application project.
 
 ## SOLID applied
 

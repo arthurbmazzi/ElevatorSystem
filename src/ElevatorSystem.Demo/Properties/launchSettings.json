@@ -1,8 +1,0 @@
-{
-  "profiles": {
-    "ElevatorSystem.Demo": {
-      "commandName": "Project",
-      "commandLineArgs": "--interactive"
-    }
-  }
-}

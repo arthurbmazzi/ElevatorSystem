@@ -46,13 +46,14 @@ app.Use(async (context, next) =>
             UnauthorizedAccessException => 403,
             KeyNotFoundException => 404,
             InvalidOperationException => 409,
+            IOException => 503,
             _ => 500
         };
         var logger = context.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger("ApiErrors");
-        if (status == 500) logger.LogError(exception, "Failure in {Method} {Path}", context.Request.Method, context.Request.Path);
+        if (status >= 500) logger.LogError(exception, "Failure in {Method} {Path}", context.Request.Method, context.Request.Path);
         else logger.LogWarning("Command rejected: {Method} {Path}: {Reason}", context.Request.Method, context.Request.Path, exception.Message);
         await Results.Problem(statusCode: status,
-            title: status == 500 ? "Internal error" : "Command rejected",
+            title: status == 503 ? "File logging unavailable" : status == 500 ? "Internal error" : "Command rejected",
             detail: status == 500 ? "Check the log file. Previously committed state has been preserved." : exception.Message)
             .ExecuteAsync(context);
     }
@@ -114,6 +115,8 @@ app.MapGet("/analytics", (SimulationSession session, CancellationToken ct) =>
     session.ExecuteAsync(s => s.GetAnalytics(), ct)).WithTags("4. Monitoring").WithSummary("View totals and metrics");
 app.MapGet("/events", (SimulationSession session, CancellationToken ct) =>
     session.ExecuteAsync(s => s.Events, ct)).WithTags("4. Monitoring").WithSummary("View the latest 1,000 events");
+app.MapGet("/logs/status", (FileLogProvider logs) => logs.GetStatus())
+    .WithTags("4. Monitoring").WithSummary("Find the active TXT file and check write or retention errors");
 
 app.Run();
 

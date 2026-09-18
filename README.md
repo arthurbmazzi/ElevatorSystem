@@ -1,77 +1,55 @@
 # Elevator System — Interview Exercise
 
-Ready-to-copy JSON files and a presentation walkthrough: [samples/README.md](samples/README.md).
-
-## REST API and manual presentation
-
-```powershell
-dotnet run --project src/ElevatorSystem.Api
-```
-
-Open **http://localhost:5080/swagger** to submit trips as JSON, inspect the fleet,
-advance the simulation, and trigger maintenance or emergency stops. In Visual Studio,
-select `ElevatorSystem.Api` as the startup project. Rotating TXT logs are stored in
-`src/ElevatorSystem.Api/logs/`. See [API_DEMO.md](API_DEMO.md) for the presentation
-walkthrough, examples, HTTP status codes, and timeout configuration.
-
-The hard level uses FIFO per car and retains elevator types, capacity, VIP priority,
-and operational modes. The console described below remains available as an alternative.
-
-C# / .NET 8 implementation of the **easy, medium and hard elevator-system levels**.
-The elevator starts at floor 1 in `IDLE`, serves floor requests in FIFO order, and
-logs each movement and door transition. The medium level adds 3–5 elevators serving floors 1–20.
-
-See [REQUIREMENTS.md](REQUIREMENTS.md) for requirements and engineering guidelines,
-and [ARCHITECTURE.md](ARCHITECTURE.md) for the SOLID mapping and design decisions.
-
-The hard implementation, APIs, policies, metrics, limitations and xUnit migration
-are explained in English in [HARD_LEVEL.md](HARD_LEVEL.md).
-
-```powershell
-dotnet run --project src/ElevatorSystem.Demo --no-launch-profile -- --hard
-dotnet run --project src/ElevatorSystem.Demo --no-launch-profile -- --benchmark
-```
+C# / .NET 8 elevator simulator with an ASP.NET Core REST API and Swagger UI.
+**ElevatorSystem.Api is the only application entry point.** The console demo has been removed.
 
 ## Run
 
-Requires a .NET SDK supporting .NET 8. The library has no external packages; the test project uses xUnit and Microsoft.NET.Test.Sdk.
+From the repository root:
 
 ```powershell
-dotnet build ElevatorSystem.sln
-dotnet run --project src/ElevatorSystem.Demo --no-launch-profile
+dotnet build ElevatorSystem.sln -m:1
+dotnet run --project src/ElevatorSystem.Api
+```
+
+Open [Swagger](http://localhost:5080/swagger) to submit trips as JSON, inspect the
+fleet, advance the simulation, and trigger maintenance or emergency stops.
+
+### Visual Studio startup project
+
+In Solution Explorer, right-click **ElevatorSystem.Api** and choose
+**Set as Startup Project**. Press F5 or Ctrl+F5. Its launch profile opens Swagger.
+`ElevatorSystem` is the core library; `ElevatorSystem.Tests` contains tests.
+Neither is the application startup project.
+
+## Presentation and documentation
+
+- [SYSTEM_GUIDE.md](SYSTEM_GUIDE.md): request flow, classes, FIFO, and concurrency.
+- [API_DEMO.md](API_DEMO.md): API setup and manual presentation scenarios.
+- [samples/README.md](samples/README.md): ready-to-copy JSON inputs and expected results.
+- [LOGGING.md](LOGGING.md): TXT files, rotation, and error recovery.
+- [HARD_LEVEL.md](HARD_LEVEL.md): hard-level rules, metrics, and limitations.
+- [ARCHITECTURE.md](ARCHITECTURE.md): architecture, SOLID, and design patterns.
+- [REQUIREMENTS.md](REQUIREMENTS.md): exercise requirements and current scope.
+
+The API uses the hard coordinator with FIFO, Local/Express/Freight cars, capacity,
+VIP priority, maintenance, emergency stops, and timeouts. TXT logs are stored in
+`src/ElevatorSystem.Api/logs/`; `GET /logs/status` identifies the current file.
+The easy and medium implementations remain in the library for their exercise levels.
+
+## Verify
+
+```powershell
 dotnet test ElevatorSystem.sln -m:1
 ```
 
-The demo serves floors **3 → 8 → 6 → 1**, opening and closing the doors at each
-stop, then finishes at floor 1 in `IDLE`. Tests are discovered by xUnit and can also run in Visual Studio Test Explorer.
+With the API running, `node tests/api-smoke.mjs` verifies HTTP behavior and 128
+concurrent submissions. It resets the demonstration fleet before and after testing.
+This is a correctness smoke test, not a latency or memory benchmark.
 
-### Interactive console
+## Earlier library levels
 
-```powershell
-dotnet run --project src/ElevatorSystem.Demo -- --interactive
-```
-
-Commands follow the API naming and are case-insensitive. Use UP or DOWN for direction. Type one command per line, for example:
-
-```text
-RequestElevator 3 UP
-RequestDestination 8
-Status
-ProcessRequests
-RequestElevator 6 DOWN
-RequestDestination 1
-ProcessRequests
-Exit
-```
-
-`RequestElevator` queues a pickup, and `RequestDestination` queues a destination (floors 1–10).
-`ProcessRequests` serves the FIFO queue and prints movement and door logs to the console.
-`Status` displays the current floor, state, and queue; `Help` lists commands.
-Invalid input prints an error and lets you try again. Processing is synchronous,
-without real-time delays; enter the next command after processing finishes.
-The default launch profile starts interactive mode, including when running from
-Visual Studio with F5 or Ctrl+F5. Set `ElevatorSystem.Demo` as the startup project.
-To run the fixed demo, use `dotnet run --project src/ElevatorSystem.Demo --no-launch-profile`.
+The following sections document the preserved library APIs, not separate applications.
 
 ## Easy-level API
 
@@ -135,8 +113,7 @@ Configurable constructors preserve their previous quiet behavior and inclusive
 floor bounds, including negative floors. Shortest queue remains the default car
 selection policy; nearest pickup is optional and ignores queued travel. The earlier
 multi-car assignment API is retained, but easy-level pickup, destination, and
-processing operations require exactly one elevator. Multi-car execution awaits a
-later level.
+processing operations require exactly one elevator. Multi-car processing is available through the separate medium and hard coordinators.
 
 ## Concurrency and scope
 
@@ -174,12 +151,6 @@ system.SubmitRequest(new Request(3, 18));
 system.SubmitRequest(new Request(20, 1));
 await system.ProcessRequestsAsync();
 Console.WriteLine(system.GetStatus());
-```
-
-Run a concurrent 24-passenger example:
-
-```powershell
-dotnet run --project src/ElevatorSystem.Demo --no-launch-profile -- --medium
 ```
 
 `SubmitRequest` adds to a synchronized central priority queue. Older Unix-millisecond

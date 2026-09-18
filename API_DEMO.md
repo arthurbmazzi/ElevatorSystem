@@ -1,5 +1,7 @@
 # Swagger presentation guide
 
+Start with [SYSTEM_GUIDE.md](SYSTEM_GUIDE.md) for the code walkthrough and [LOGGING.md](LOGGING.md) for logging and troubleshooting.
+
 Ready-to-copy JSON files and a presentation walkthrough: [samples/README.md](samples/README.md).
 
 ## Start the API
@@ -12,7 +14,7 @@ dotnet run --project src/ElevatorSystem.Api
 
 Open http://localhost:5080/swagger. In Visual Studio, set **ElevatorSystem.Api**
 as the startup project and press F5; the launch profile opens Swagger.
-The original console remains available in ElevatorSystem.Demo.
+The API is the only application entry point; the console demo has been removed.
 
 Each endpoint has a description. Expand the operation, edit its JSON, and click
 **Execute**. Responses use enum names and trip IDs. An accepted request returns
@@ -75,6 +77,8 @@ the waiting queue before entering `Maintenance`.
 - `allowedFloors: [1, 2]` for a trip from 1 to 20: **403**, even for a VIP.
 - Operating elevator 99: **404**.
 - Resuming an elevator already in Normal mode: **409**.
+- A file-writing failure affecting a command: **503**. Use `GET /logs/status`
+  to inspect the current file and error; see [LOGGING.md](LOGGING.md) for recovery.
 
 Errors return Problem Details with `status`, `title`, and `detail`. The API
 continues accepting commands. Completed trip IDs expire with the bounded history.

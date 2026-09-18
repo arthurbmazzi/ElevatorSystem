@@ -14,13 +14,12 @@ preserving the guarantees already tested in earlier levels.
 ```powershell
 dotnet build ElevatorSystem.sln -m:1
 dotnet test ElevatorSystem.sln -m:1
-dotnet run --project src/ElevatorSystem.Demo --no-launch-profile -- --hard
-dotnet run --project src/ElevatorSystem.Demo --no-launch-profile -- --benchmark
+dotnet run --project src/ElevatorSystem.Api
 ```
 
-`--hard` demonstrates regular passengers, VIPs, cargo, maintenance, emergency stops,
-redistribution, and recovery. `--benchmark` measures FIFO processing with 128
-concurrent submissions, fixed floors, and deterministic timestamps.
+Use Swagger at http://localhost:5080/swagger to demonstrate passengers, VIPs, cargo,
+maintenance, emergency stops, redistribution, and recovery. See API_DEMO.md for
+the manual steps and samples/README.md for JSON inputs.
 
 Library example:
 
@@ -166,8 +165,7 @@ and fleet state does not survive a restart.
 ## Monitoring and analytics
 
 `Events` returns a window of structured events containing tick, event type, car ID,
-trip ID when applicable, and floor/state/mode captured at the transition. The console
-demo prints them. The API also captures every event through `IEnterpriseEventSink`
+trip ID when applicable, and floor/state/mode captured at the transition. The API captures every event through `IEnterpriseEventSink`
 and writes TXT files outside the fleet lock, independently of this bounded window.
 Files rotate and have retention limits; they do not restore fleet state.
 
@@ -182,8 +180,8 @@ Files rotate and have retention limits; they do not restore fleet state.
 One tick represents one floor movement or one door operation per car. Simulated
 averages use ticks, not real seconds. Assignment latency uses `Stopwatch` and measures
 each successful assignment inside the lock; it excludes waiting to acquire the lock
-and time in the queue. The benchmark also measures `SubmitRequest` latency, including
-contention, and total processing time.
+and time in the queue. The console benchmark has been removed with the demo project.
+The API smoke test checks correctness; it does not measure an end-to-end latency SLA.
 
 Dividing accumulated car-ticks by `Tick * carCount` yields utilization percentages.
 Configuration and history limits bound retained data; heap profiling and prolonged
@@ -207,7 +205,7 @@ operations internally. xUnit1031 is suppressed for inherited tests using gates a
 threads with explicit timeouts. The operational timeout uses a fake clock rather
 than real sleeps.
 
-Performance measurements run in the demo, without unstable timing assertions in
-xUnit. Tests verify FIFO ordering and completion of each trip before the next pickup
-in the same car. Run `--benchmark` for current measurements; results depend on JIT,
-hardware, and load and do not establish an end-to-end SLA.
+Tests avoid unstable timing assertions. They verify FIFO ordering and completion
+of each trip before the next pickup in the same car. GET /analytics exposes current
+assignment timing; results depend on JIT, hardware, and load and do not establish
+an end-to-end SLA.
