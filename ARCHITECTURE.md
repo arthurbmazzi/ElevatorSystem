@@ -1,5 +1,21 @@
 # Architecture and engineering decisions
 
+## REST presentation adapter
+
+`ElevatorSystem.Api` is a separate ASP.NET Core executable referencing the library.
+HTTP DTOs, Swagger and HTTP exception translation live in that project, outside the
+domain. A singleton `SimulationSession` owns one hard-level fleet with FIFO routing.
+Its command semaphore protects per-command event buffering and consistent responses;
+processing releases this gate between ticks so other commands can run. A separate
+processing semaphore coordinates full drains and resets.
+
+The optional application port `IEnterpriseEventSink` captures events in memory under
+the fleet lock. The API flushes that buffer to a rotating TXT adapter after every
+command/tick, outside the fleet lock. This avoids losing events when the bounded
+monitoring history expires. File writes are synchronous and part of HTTP latency;
+they are not included in the library's assignment timing. The console adapter stays
+available. See [API_DEMO.md](API_DEMO.md) for the manual presentation workflow.
+
 For the hard-level coordinator, routing, lifecycle, operational safety, metrics,
 bounded histories and xUnit migration, see [HARD_LEVEL.md](HARD_LEVEL.md).
 The legacy architecture below documents the preserved foundation/easy/medium APIs.

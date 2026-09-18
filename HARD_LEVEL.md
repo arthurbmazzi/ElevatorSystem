@@ -1,11 +1,15 @@
-# Nível hard: implementação e decisões
+# Hard level: implementation and decisions
 
-O nível hard usa `EnterpriseElevatorSystem`. Os coordenadores `ElevatorController`
-(easy) e `ElevatorSystem` (medium) mantêm suas APIs e comportamento FIFO. O novo
-coordenador reutiliza `Elevator` para movimento, limites e intertravamento das portas.
-Isso evita alterar as garantias já verificadas dos níveis anteriores.
+For Swagger presentations and TXT event logs, see [API_DEMO.md](API_DEMO.md).
+The API uses the same library with a 300-second timeout for manual pauses;
+the 30 seconds described below remain the library default.
 
-## Executar
+The hard level uses `EnterpriseElevatorSystem`. The `ElevatorController` (easy)
+and `ElevatorSystem` (medium) coordinators retain their APIs and FIFO behavior.
+The hard coordinator reuses `Elevator` for movement, bounds, and door interlocks,
+preserving the guarantees already tested in earlier levels.
+
+## Run
 
 ```powershell
 dotnet build ElevatorSystem.sln -m:1
@@ -14,11 +18,11 @@ dotnet run --project src/ElevatorSystem.Demo --no-launch-profile -- --hard
 dotnet run --project src/ElevatorSystem.Demo --no-launch-profile -- --benchmark
 ```
 
-`--hard` demonstra solicitações comuns, VIP, carga, manutenção, emergência,
-redistribuição e retomada. `--benchmark` mede o processamento FIFO com 128 solicitações
-concorrentes, os mesmos andares e timestamps determinísticos.
+`--hard` demonstrates regular passengers, VIPs, cargo, maintenance, emergency stops,
+redistribution, and recovery. `--benchmark` measures FIFO processing with 128
+concurrent submissions, fixed floors, and deterministic timestamps.
 
-Exemplo de uso da biblioteca:
+Library example:
 
 ```csharp
 var system = new EnterpriseElevatorSystem(EnterpriseFleetFactory.CreateDefault());
@@ -30,178 +34,180 @@ var trip = system.Trips.Single(t => t.Id == request.Trip.Id);
 var metrics = system.GetAnalytics();
 ```
 
-`BalanceLoad()` atribui sem movimentar. `ProcessTick()` permite avançar a simulação
-passo a passo para inspecionar embarques e acionar os controles operacionais.
+`BalanceLoad()` assigns trips without movement. `ProcessTick()` advances the
+simulation one step at a time so callers can inspect pickups and apply controls.
 
-## Organização e responsabilidades
+## Organization and responsibilities
 
-| Arquivo/área | Responsabilidade |
+| File/area | Responsibility |
 | --- | --- |
-| `Domain/EnterpriseModels.cs` | Configuração imutável, tipos, permissões, solicitações e snapshots |
-| `Application/EnterpriseElevatorSystem.cs` | Admissão, despacho, ciclo de vida, operação e observações atômicas |
-| `Application/Scheduling/IStopSchedulingStrategy.cs` | Contrato de roteamento e implementação FIFO |
-| `Composition/EnterpriseFleetFactory.cs` | Composição da frota padrão |
-| `tests/ElevatorSystem.Tests` | Testes xUnit de todos os níveis |
+| `Domain/EnterpriseModels.cs` | Immutable configuration, types, permissions, requests, and snapshots |
+| `Application/EnterpriseElevatorSystem.cs` | Admission, dispatch, lifecycle, operations, and atomic observations |
+| `Application/Scheduling/IStopSchedulingStrategy.cs` | Routing contract and FIFO implementation |
+| `Composition/EnterpriseFleetFactory.cs` | Default fleet composition |
+| `tests/ElevatorSystem.Tests` | xUnit tests for all levels |
 
-Configuração usa composição: não há três subclasses duplicando movimento e portas.
-A política de roteamento é injetável e recebe uma lista somente leitura. O domínio
-não depende de console, xUnit ou infraestrutura. O coordenador mantém decisões
-coesas sobre a frota; não foram adicionados serviços externos ou interfaces sem uso.
+Configuration uses composition instead of three subclasses duplicating movement
+and door behavior. Routing is injectable and receives a read-only list. The domain
+does not depend on the console, xUnit, or infrastructure. The coordinator keeps
+related fleet decisions together, without unused service abstractions.
 
-## Tipos, capacidade e restrições
+## Types, capacity, and restrictions
 
-A frota padrão tem três carros, no prédio de 1 a 20:
+The default fleet has three cars serving a building with floors 1 through 20:
 
-| ID | Tipo | Andares atendidos | Capacidade |
+| ID | Type | Served floors | Capacity |
 | --- | --- | --- | --- |
-| 0 | Local | 1 a 20 | 1000 kg |
+| 0 | Local | 1 through 20 | 1000 kg |
 | 1 | Express | 1, 10, 15, 20 | 1000 kg |
-| 2 | Freight | 1 a 20 | 3000 kg |
+| 2 | Freight | 1 through 20 | 3000 kg |
 
-Outras configurações permitem 3–5 carros, IDs distintos e andares/capacidades
-próprios. O express passa fisicamente pelos andares intermediários, mas não abre
-portas neles. Não existem baldeações automáticas. Freight atende apenas carga;
-local/express atendem passageiros. Cada solicitação tem peso positivo.
+Custom configurations support 3–5 cars with unique IDs and individual service floors
+and capacities. Express passes through intermediate floors without opening its
+doors there. Automatic transfers are not supported. Freight serves cargo only;
+Local and Express serve passengers. Every request must have a positive weight.
 
-O despacho reserva capacidade para todas as viagens atribuídas, inclusive antes
-do embarque. É uma política conservadora que impede sobrecarga, mas pode reduzir
-ocupação em comparação com um planejamento de capacidade por trecho.
+Dispatch reserves capacity for all assigned trips, including passengers who have
+not boarded. This conservative policy prevents overload but may reduce occupancy
+compared with planning capacity separately for each route segment.
 
-Antes de aceitar, a aplicação valida autorização na origem e no destino e verifica
-se existe algum carro fisicamente compatível. Pedido impossível é rejeitado sem
-mudar contadores. Se um carro compatível existe mas está indisponível ou sem
-capacidade, a viagem fica aguardando. Outras solicitações continuam sendo atendidas.
+Before accepting a request, the application validates access to both pickup and
+destination and checks that a physically compatible car exists. Impossible requests
+are rejected without changing counters. If a compatible car exists but is unavailable
+or has insufficient remaining capacity, the trip waits while other requests proceed.
 
-`AccessProfile` representa permissões fornecidas por um chamador confiável; não é
-um sistema de login. `IsVip` não concede andares adicionais. Em uma aplicação com
-usuários reais, esse perfil viria da autorização no servidor.
+`AccessProfile` represents permissions supplied by a trusted caller; it is not a
+login system. `IsVip` does not grant access to additional floors. With real users,
+this profile would come from server-side authorization.
 
-## Viagens, despacho e FIFO
+## Trips, dispatch, and FIFO
 
-Cada viagem conserva o `Request.Id` e percorre:
+Each trip retains its `Request.Id` and follows this lifecycle:
 
 ```text
 Waiting -> Assigned -> Onboard -> Completed
               |
-              +-> Waiting (redistribuição antes do embarque)
+              +-> Waiting (redistribution before pickup)
 ```
 
-O destino só entra no planejamento depois do embarque. Conclusão ocorre ao abrir
-as portas no destino; o processamento também fecha as portas antes de terminar.
-Não se removem passageiros por posição FIFO: cada transição identifica a viagem.
+The destination enters the route only after pickup. Completion occurs when the
+doors open at the destination; processing also closes the doors before finishing.
+Each transition identifies its trip rather than removing passengers by queue position.
 
-O despacho primeiro filtra disponibilidade, tipo, andares e capacidade. Depois
-simula a política de rota para estimar o tempo até o novo embarque, incluindo
-movimento, embarques anteriores, destinos ativados e operações de portas. Desempates
-usam quantidade de viagens e ID. A estimativa não prevê chegadas futuras.
+Dispatch first filters by availability, type, floors, and capacity. It then simulates
+the routing policy to estimate time to pickup, including movement, earlier pickups,
+activated destinations, and door operations. Ties use trip count and car ID. This
+estimate does not predict future arrivals.
 
-FIFO atende as viagens na ordem em que foram atribuídas a cada carro: busca o
-passageiro, entrega no destino e só então atende a próxima viagem. Não reordena
-paradas por proximidade ou sentido. A prioridade VIP continua valendo na atribuição,
-antes de entrar nessa sequência. A interface de roteamento permanece como ponto
-de extensão para estudar outros algoritmos futuramente.
+FIFO serves trips in the order assigned to each car: pick up the passenger, reach
+the destination, then serve the next trip. It does not reorder stops by proximity or
+direction. VIP priority still applies during assignment, before entering this sequence.
+The routing interface remains an extension point for studying other algorithms later.
 
-VIP recebe vantagem de 20 ticks na ordem de despacho. A chave usa tick de chegada
-menos essa vantagem, depois timestamp e sequência. Assim, uma viagem comum que já
-esperou mais de 20 ticks precede novos VIPs. Isso evita preterição indefinida por
-novas chegadas VIP quando há capacidade compatível e o simulador avança. Não é
-garantia de atendimento quando todos os carros compatíveis estão indisponíveis.
-Viagens já atribuídas não são interrompidas para dar passagem a VIPs.
+VIP requests receive a 20-tick head start in dispatch order. The key uses arrival
+tick minus this bonus, followed by timestamp and submission sequence. A regular trip
+that has waited more than 20 ticks therefore precedes newly arriving VIPs. This
+prevents indefinite overtaking by new VIPs when compatible capacity is available and
+the simulation advances. It does not guarantee service when all compatible cars
+are unavailable. Assigned trips are not interrupted to give way to VIP requests.
 
-## Manutenção, emergência e timeout
+## Maintenance, emergency stops, and timeouts
 
-`OperationalMode` é independente de `ElevatorState`: modo operacional e portas
-precisam coexistir. Por isso, o hard representa manutenção em `Mode`, mantendo
-o estado físico em `State`; o enum legado permanece compatível.
+`OperationalMode` is independent of `ElevatorState`: operational mode must coexist
+with physical door state. The hard level represents maintenance in `Mode`, keeping
+the physical state in `State`; the legacy enum remains compatible.
 
-- `RequestMaintenance(id)`: Normal -> Draining; devolve viagens não embarcadas à
-  espera, termina as embarcadas e entra em Maintenance com portas fechadas.
-- `EmergencyStop(id)`: bloqueia os próximos passos de movimento e portas;
-  redistribui apenas viagens ainda não embarcadas. Passageiros a bordo permanecem
-  no mesmo carro. Uma emergência pode interromper a drenagem para manutenção.
-- `ResumeService(id)`: retorno explícito de Maintenance/EmergencyStopped para Normal.
-  O modo físico de portas é preservado; portas abertas são fechadas antes de mover.
-- `CheckTimeouts()`: usa `TimeProvider.GetTimestamp()` para detectar carros com
-  trabalho sem progresso por 30 segundos, configurável, e aciona emergência.
+- `RequestMaintenance(id)`: Normal -> Draining; requeues trips that have not boarded,
+  completes onboard trips, and enters Maintenance with doors closed.
+- `EmergencyStop(id)`: blocks subsequent movement and door steps; redistributes only
+  trips that have not boarded. Onboard passengers remain in the same car. An emergency
+  can interrupt draining for maintenance.
+- `ResumeService(id)`: explicitly returns Maintenance/EmergencyStopped to Normal.
+  Physical door state is preserved; open doors are closed before movement.
+- `CheckTimeouts()`: uses `TimeProvider.GetTimestamp()` to detect cars with work but
+  no progress for 30 seconds (configurable), then triggers an emergency stop.
 
-O watchdog é verificado antes de cada tick e também pode ser chamado pelo host.
-Não há temporizador oculto: se ninguém chama o simulador nem o watchdog, não existe
-detecção autônoma. Uma pausa real prolongada com trabalho atribuído conta como falta
-de progresso; para testes e simulações controladas, injete `TimeProvider`.
-Um callback de estratégia que bloqueia indefinidamente não pode ser interrompido
-por esse watchdog: o contrato da estratégia exige execução rápida e sem I/O.
+The watchdog is checked before each tick and can also be called by the host.
+There is no hidden timer: if neither simulation nor watchdog is called, detection
+cannot run autonomously. A prolonged real-time pause with assigned work counts as
+lack of progress; inject `TimeProvider` for controlled simulations and tests.
+The watchdog cannot interrupt a routing callback that blocks indefinitely. Routing
+policies must execute quickly and perform no I/O.
 
-A simulação representa posições inteiras. Emergência acontece entre passos atômicos,
-sem modelar frenagem entre andares ou procedimentos físicos de resgate.
+The simulation uses integer floor positions. Emergency stops occur between atomic
+steps; braking between floors and physical rescue procedures are not modeled.
 
-## Concorrência, falhas e limites
+## Concurrency, failures, and limits
 
-Um lock da frota protege seleção + atribuição, filas, estados e métricas. A ordem
-de locks é frota -> elevador. Nenhum elevador da frota hard é exposto para mutação:
-os consumidores recebem snapshots imutáveis. `ProcessTick()` avança cada carro uma
-vez; `ProcessRequestsAsync()` serializa chamadas de processamento com semáforo e
-cede execução entre ticks. Submissões e controles podem acontecer entre ticks.
+A fleet lock protects selection plus assignment, queues, states, and metrics. Lock
+order is fleet -> elevator. Hard-level cars are not exposed for external mutation;
+callers receive immutable snapshots. `ProcessTick()` advances each car once.
+`ProcessRequestsAsync()` serializes processing calls with a semaphore and yields
+between ticks. Submissions and operational controls can run between ticks.
 
-O hard usa ticks coordenados determinísticos; o processamento com workers por carro
-do medium continua disponível. O hard não cria um worker por carro, pois isso faria
-o tempo simulado depender do escalonador do sistema operacional.
+The hard level uses deterministic coordinated ticks. Medium-level processing with
+one worker per car remains available. The hard level does not create a worker per
+car, because simulated time would then depend on operating-system scheduling.
 
-Cancelamento preserva tudo que foi confirmado e libera o semáforo. Política inválida
-ou que lança exceção não atribui a solicitação atual; operações anteriores permanecem
-confirmadas. Políticas customizadas devem ser puras, rápidas e não chamar o coordenador.
+Cancellation preserves committed work and releases the semaphore. A policy that
+returns an invalid decision or throws does not assign the current request; earlier
+operations remain committed. Custom policies must be pure, fast, and must not call
+back into the coordinator.
 
-Quando nenhum carro consegue avançar, o processamento retorna, mesmo que existam
-viagens bloqueadas. Consulte `Pending` e retome após liberar carros. Submissões feitas
-depois do último tick exigem nova chamada de processamento, como nos níveis anteriores.
+Processing returns when no car can advance, even if blocked trips remain. Check
+`Pending` and resume after restoring service. Requests arriving after the last tick
+require another processing call, as in earlier levels.
 
-Limites padrão: 10.000 viagens pendentes e 1.000 registros em cada histórico de
-eventos, viagens concluídas e amostras de espera. A fila cheia rejeita novas viagens.
-Identificadores duplicados são rejeitados enquanto permanecem no histórico; não há
-deduplicação durável depois de expirar o histórico nem persistência após reinício.
+Default limits are 10,000 pending trips and 1,000 entries in each event, completed-trip,
+and wait-sample history. A full queue rejects new trips. Duplicate IDs are rejected
+while retained in history; deduplication is not durable after history expiration,
+and fleet state does not survive a restart.
 
-## Monitoramento e analytics
+## Monitoring and analytics
 
-`Events` entrega uma janela de eventos estruturados, com tick, tipo, ID de carro e
-ID de viagem quando aplicável, além de andar, estado e modo capturados na transição.
-A demo os imprime. Não são logs persistentes.
+`Events` returns a window of structured events containing tick, event type, car ID,
+trip ID when applicable, and floor/state/mode captured at the transition. The console
+demo prints them. The API also captures every event through `IEnterpriseEventSink`
+and writes TXT files outside the fleet lock, independently of this bounded window.
+Files rotate and have retention limits; they do not restore fleet state.
 
-`GetAnalytics()` informa:
+`GetAnalytics()` provides:
 
-- Enviadas, concluídas, pendentes e idade da viagem ainda não atribuída mais antiga.
-- Espera média de todas as viagens embarcadas e P95 da janela recente de embarques.
-- Tempo médio entre embarque e desembarque e throughput em viagens/tick.
-- Andares percorridos e soma de car-ticks em movimento, portas, ociosidade e indisponibilidade.
-- Quantidade de atribuições e duração média/máxima da seleção e atribuição em ms reais.
+- Submitted, completed, pending, and the age of the oldest unassigned trip.
+- Average wait for all boarded trips and P95 for the recent pickup window.
+- Average time between pickup and drop-off, and throughput in trips per tick.
+- Floors traveled and accumulated car-ticks moving, operating doors, idle, or unavailable.
+- Assignment count and average/maximum selection-plus-assignment duration in real milliseconds.
 
-Um tick significa um movimento de um andar ou uma operação de porta por carro.
-As médias simuladas são em ticks, não segundos reais. Latência de atribuição usa
-`Stopwatch` e mede cada atribuição bem-sucedida dentro do lock; não inclui espera
-para adquirir o lock nem tempo na fila. O benchmark mede também a latência de
-`SubmitRequest`, incluindo contenção, e o tempo total de processamento.
+One tick represents one floor movement or one door operation per car. Simulated
+averages use ticks, not real seconds. Assignment latency uses `Stopwatch` and measures
+each successful assignment inside the lock; it excludes waiting to acquire the lock
+and time in the queue. The benchmark also measures `SubmitRequest` latency, including
+contention, and total processing time.
 
-As somas de car-ticks divididas por `Tick * quantidadeDeCarros` permitem calcular
-percentuais de utilização. A memória fica limitada pelas configurações e históricos;
-não foi realizado profiling de heap nem ensaio prolongado de produção.
+Dividing accumulated car-ticks by `Tick * carCount` yields utilization percentages.
+Configuration and history limits bound retained data; heap profiling and prolonged
+production load testing have not been performed.
 
-## Testes xUnit
+## xUnit tests
 
-O projeto `ElevatorSystem.Checks` foi substituído por `ElevatorSystem.Tests`.
-Não existe mais `Main` chamando verificações manualmente. Métodos `[Fact]` e
-`[Theory]` são descobertos por `dotnet test` e pelo Test Explorer.
+`ElevatorSystem.Tests` replaced `ElevatorSystem.Checks`. There is no longer a `Main`
+method manually invoking checks. `[Fact]` and `[Theory]` methods are discovered by
+`dotnet test` and Test Explorer.
 
-- `FoundationTests`: validação, snapshots, estratégias, atomicidade e 128 chamadores.
-- `EasyLevelTests`: movimento, FIFO, portas, pares, logging e concorrência.
-- `MediumLevelTests`: prioridade, distribuição, cancelamento, falhas e workers concorrentes.
-- `HardLevelTests`: tipos/capacidade, acesso VIP, FIFO, ciclo de vida, manutenção,
-  emergência, timeout, envelhecimento, limites, métricas, snapshots e concorrência.
+- `FoundationTests`: validation, snapshots, strategies, atomicity, and 128 callers.
+- `EasyLevelTests`: movement, FIFO, doors, paired trips, logging, and concurrency.
+- `MediumLevelTests`: priority, distribution, cancellation, failures, and concurrent workers.
+- `HardLevelTests`: types/capacity, VIP access, FIFO, lifecycle, maintenance, emergency,
+  timeout, aging, limits, metrics, snapshots, concurrency, and complete event capture.
 
-Os testes usam `Assert` do xUnit. O paralelismo entre testes é desabilitado porque
-um teste legado captura `Console.Out`, que é global. Os testes de concorrência
-continuam criando suas próprias operações simultâneas. A regra xUnit1031 foi
-suprimida para os testes herdados que usam gates e threads com timeouts explícitos.
-O timeout operacional é testado com relógio falso, sem sleeps reais.
+Tests use xUnit assertions. Test-level parallelism is disabled because a legacy test
+captures the process-wide `Console.Out`; concurrency tests still create concurrent
+operations internally. xUnit1031 is suppressed for inherited tests using gates and
+threads with explicit timeouts. The operational timeout uses a fake clock rather
+than real sleeps.
 
-Medições de desempenho são feitas pela demo, sem assert de tempo instável no xUnit.
-Os testes verificam a ordem FIFO e a conclusão de cada viagem antes do próximo
-embarque no mesmo carro. Execute `--benchmark` para obter as medições atuais;
-resultados dependem de JIT, máquina e carga e não comprovam um SLA de ponta a ponta.
+Performance measurements run in the demo, without unstable timing assertions in
+xUnit. Tests verify FIFO ordering and completion of each trip before the next pickup
+in the same car. Run `--benchmark` for current measurements; results depend on JIT,
+hardware, and load and do not establish an end-to-end SLA.

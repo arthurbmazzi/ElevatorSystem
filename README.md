@@ -1,5 +1,20 @@
 # Elevator System — Interview Exercise
 
+## REST API and manual presentation
+
+```powershell
+dotnet run --project src/ElevatorSystem.Api
+```
+
+Open **http://localhost:5080/swagger** to submit trips as JSON, inspect the fleet,
+advance the simulation, and trigger maintenance or emergency stops. In Visual Studio,
+select `ElevatorSystem.Api` as the startup project. Rotating TXT logs are stored in
+`src/ElevatorSystem.Api/logs/`. See [API_DEMO.md](API_DEMO.md) for the presentation
+walkthrough, examples, HTTP status codes, and timeout configuration.
+
+The hard level uses FIFO per car and retains elevator types, capacity, VIP priority,
+and operational modes. The console described below remains available as an alternative.
+
 C# / .NET 8 implementation of the **easy, medium and hard elevator-system levels**.
 The elevator starts at floor 1 in `IDLE`, serves floor requests in FIFO order, and
 logs each movement and door transition. The medium level adds 3–5 elevators serving floors 1–20.
@@ -8,7 +23,7 @@ See [REQUIREMENTS.md](REQUIREMENTS.md) for requirements and engineering guidelin
 and [ARCHITECTURE.md](ARCHITECTURE.md) for the SOLID mapping and design decisions.
 
 The hard implementation, APIs, policies, metrics, limitations and xUnit migration
-are explained in Portuguese in [HARD_LEVEL.md](HARD_LEVEL.md).
+are explained in English in [HARD_LEVEL.md](HARD_LEVEL.md).
 
 ```powershell
 dotnet run --project src/ElevatorSystem.Demo --no-launch-profile -- --hard

@@ -4,3 +4,4 @@
 *.user
 *.suo
 .dotnet/
+**/logs/

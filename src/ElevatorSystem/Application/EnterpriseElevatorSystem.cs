@@ -16,6 +16,7 @@ public sealed class EnterpriseElevatorSystem
     private readonly Queue<EnterpriseEvent> _events = new();
     private readonly Queue<long> _waitSamples = new();
     private readonly IStopSchedulingStrategy _routing;
+    private readonly IEnterpriseEventSink? _eventSink;
     private readonly TimeProvider _clock;
     private readonly TimeSpan _stuckTimeout;
     private readonly int _maxPending;
@@ -27,7 +28,8 @@ public sealed class EnterpriseElevatorSystem
 
     public EnterpriseElevatorSystem(IEnumerable<ElevatorConfiguration> configurations,
         IStopSchedulingStrategy? routing = null, TimeProvider? clock = null,
-        TimeSpan? stuckTimeout = null, int maxPending = 10000, int historyLimit = 1000)
+        TimeSpan? stuckTimeout = null, int maxPending = 10000, int historyLimit = 1000,
+        IEnterpriseEventSink? eventSink = null)
     {
         ArgumentNullException.ThrowIfNull(configurations);
         var configs = configurations.ToArray();
@@ -40,6 +42,7 @@ public sealed class EnterpriseElevatorSystem
         if (_stuckTimeout <= TimeSpan.Zero) throw new ArgumentOutOfRangeException(nameof(stuckTimeout));
         _clock = clock ?? TimeProvider.System; _routing = routing ?? new FifoStopSchedulingStrategy();
         _maxPending = maxPending; _historyLimit = historyLimit;
+        _eventSink = eventSink;
         _cars = configs.Select(c => new Car(c)).ToList();
     }
 
@@ -293,9 +296,11 @@ public sealed class EnterpriseElevatorSystem
     private void Emit(string name, int? elevatorId = null, Guid? requestId = null)
     {
         var car = elevatorId is null ? null : Find(elevatorId.Value);
-        _events.Enqueue(new(_tick, name, elevatorId, requestId,
-            car?.Elevator.CurrentFloor, car?.Elevator.State, car?.Mode));
+        var entry = new EnterpriseEvent(_tick, name, elevatorId, requestId,
+            car?.Elevator.CurrentFloor, car?.Elevator.State, car?.Mode);
+        _events.Enqueue(entry);
         if (_events.Count > _historyLimit) _events.Dequeue();
+        _eventSink?.Record(entry);
     }
 
     private sealed class Car(ElevatorConfiguration config)

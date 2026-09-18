@@ -121,3 +121,12 @@ outside the easy-level scope. Performance targets remain to be benchmarked.
 - Follow the supplied request.pdf and existing C#/.NET, SOLID and concurrency guidelines.
 
 Detailed policies, simulation limits and usage are documented in HARD_LEVEL.md.
+
+## Manual REST demonstration
+
+- Add an ASP.NET Core API and Swagger UI for JSON commands and fleet inspection.
+- Keep the hard-level features and FIFO routing in the shared library.
+- Use a singleton fleet with explicit tick/process commands, plus a demo reset.
+- Persist diagnostic events to rotating TXT files outside the fleet lock.
+- Provide a concise manual presentation guide with request examples and expected results.
+- Preserve the existing console as an alternative entry point.

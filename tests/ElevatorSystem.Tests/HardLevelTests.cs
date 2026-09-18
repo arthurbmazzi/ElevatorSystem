@@ -249,6 +249,28 @@ public class HardLevelTests
         Assert.Equal(metrics.Tick * 3, metrics.MovingTicks + metrics.DoorTicks + metrics.IdleTicks + metrics.UnavailableTicks);
     }
 
+    [Fact]
+    public async Task EventSinkReceivesFullTripEvenWhenHistoryExpires()
+    {
+        var sink = new RecordingEventSink();
+        var system = new EnterpriseElevatorSystem(EnterpriseFleetFactory.CreateDefault(),
+            historyLimit: 2, eventSink: sink);
+        system.SubmitRequest(Request(1, 20));
+        await system.ProcessRequestsAsync();
+        Assert.Equal(2, system.Events.Count);
+        Assert.Contains(sink.Events, e => e.Name == "RequestSubmitted");
+        Assert.Single(sink.Events, e => e.Name == "PassengerPickedUp");
+        Assert.Single(sink.Events, e => e.Name == "PassengerDroppedOff");
+        Assert.Equal("DoorsClosed", sink.Events.Last().Name);
+        Assert.Equal(19, sink.Events.Count(e => e.Name == "Moved"));
+    }
+
+    private sealed class RecordingEventSink : IEnterpriseEventSink
+    {
+        public List<EnterpriseEvent> Events { get; } = new();
+        public void Record(EnterpriseEvent entry) => Events.Add(entry);
+    }
+
     private sealed class ManualClock : TimeProvider
     {
         private long _timestamp;
