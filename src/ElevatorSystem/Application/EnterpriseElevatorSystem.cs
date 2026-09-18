@@ -3,7 +3,7 @@ using System.Diagnostics;
 namespace ElevatorSystem;
 
 /// <summary>
-/// Hard-level coordinator. One lock owns assignment and transitions; callbacks never run under it.
+/// Hard-level coordinator. One lock owns assignment and transitions, including pure routing decisions.
 /// Each simulation tick advances every car once. Physical movement is delegated to Elevator.
 /// </summary>
 public sealed class EnterpriseElevatorSystem
@@ -38,7 +38,7 @@ public sealed class EnterpriseElevatorSystem
         if (historyLimit <= 0) throw new ArgumentOutOfRangeException(nameof(historyLimit));
         _stuckTimeout = stuckTimeout ?? TimeSpan.FromSeconds(30);
         if (_stuckTimeout <= TimeSpan.Zero) throw new ArgumentOutOfRangeException(nameof(stuckTimeout));
-        _clock = clock ?? TimeProvider.System; _routing = routing ?? new LookStopSchedulingStrategy();
+        _clock = clock ?? TimeProvider.System; _routing = routing ?? new FifoStopSchedulingStrategy();
         _maxPending = maxPending; _historyLimit = historyLimit;
         _cars = configs.Select(c => new Car(c)).ToList();
     }
@@ -123,11 +123,13 @@ public sealed class EnterpriseElevatorSystem
             cost += Math.Abs(decision.Stop.Floor - floor);
             if (decision.Stop.RequestId == added.Request.Trip.Id) return cost;
             cost += 2; floor = decision.Stop.Floor; direction = decision.Direction;
-            stops.Remove(decision.Stop);
+            int stopIndex = stops.IndexOf(decision.Stop);
+            stops.RemoveAt(stopIndex);
             if (decision.Stop.IsPickup)
             {
                 var request = trips[decision.Stop.RequestId].Request.Trip;
-                stops.Add(new(request.Id, request.DestinationFloor, request.Direction, false));
+                // Keep the trip's place: FIFO completes its destination before the next pickup.
+                stops.Insert(stopIndex, new(request.Id, request.DestinationFloor, request.Direction, false));
             }
         }
         return cost;

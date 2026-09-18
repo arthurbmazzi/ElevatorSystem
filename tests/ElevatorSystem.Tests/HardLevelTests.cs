@@ -98,19 +98,21 @@ public class HardLevelTests
     }
 
     [Fact]
-    public void LookSweepsThenReversesWithoutVisitingBuildingBoundary()
+    public void FifoKeepsInsertionOrderRegardlessOfDistance()
     {
-        var look = new LookStopSchedulingStrategy();
-        var stops = new List<ScheduledStop> { new(Guid.NewGuid(), 3, Direction.DOWN, false),
-            new(Guid.NewGuid(), 12, Direction.UP, false), new(Guid.NewGuid(), 8, Direction.UP, false) };
-        var first = look.SelectNext(5, Direction.UP, stops); Assert.Equal(8, first.Stop.Floor); stops.Remove(first.Stop);
-        var second = look.SelectNext(8, first.Direction, stops); Assert.Equal(12, second.Stop.Floor); stops.Remove(second.Stop);
-        var third = look.SelectNext(12, second.Direction, stops);
-        Assert.Equal(3, third.Stop.Floor); Assert.Equal(Direction.DOWN, third.Direction);
+        var fifo = new FifoStopSchedulingStrategy();
+        var stops = new List<ScheduledStop> { new(Guid.NewGuid(), 12, Direction.UP, true),
+            new(Guid.NewGuid(), 3, Direction.DOWN, true), new(Guid.NewGuid(), 8, Direction.UP, true) };
+        var first = fifo.SelectNext(5, Direction.UP, stops);
+        Assert.Equal(12, first.Stop.Floor);
+        stops.Remove(first.Stop);
+        var second = fifo.SelectNext(12, first.Direction, stops);
+        Assert.Equal(3, second.Stop.Floor);
+        Assert.Equal(Direction.DOWN, second.Direction);
     }
 
     [Fact]
-    public async Task EveryDestinationFollowsItsOwnPickupUnderLook()
+    public async Task EveryDestinationFollowsItsOwnPickupUnderFifo()
     {
         var system = Create(history: 10000);
         foreach (var request in new[] { Request(8, 2), Request(3, 15), Request(9, 4), Request(1, 20) })
@@ -215,18 +217,25 @@ public class HardLevelTests
     }
 
     [Fact]
-    public async Task LookReducesTravelForKnownSweepComparedWithFifo()
+    public async Task DefaultRoutingCompletesEachTripBeforeNextPickup()
     {
-        async Task<long> Distance(IStopSchedulingStrategy routing)
+        var system = Create();
+        system.RequestMaintenance(1);
+        var requests = new[] { Request(1, 12), Request(1, 8), Request(1, 3) };
+        foreach (var request in requests) system.SubmitRequest(request);
+        await system.ProcessRequestsAsync();
+        var serviceEvents = system.Events.Where(e =>
+            e.Name is "PassengerPickedUp" or "PassengerDroppedOff").ToArray();
+        Assert.Equal(6, serviceEvents.Length);
+        for (int i = 0; i < requests.Length; i++)
         {
-            var system = Create(routing: routing); system.RequestMaintenance(1);
-            foreach (var request in new[] { Request(1, 12), Request(1, 8), Request(1, 3) })
-                system.SubmitRequest(request);
-            await system.ProcessRequestsAsync();
-            Assert.Equal(3, system.GetAnalytics().Completed);
-            return system.GetAnalytics().FloorsTravelled;
+            Assert.Equal("PassengerPickedUp", serviceEvents[i * 2].Name);
+            Assert.Equal(requests[i].Trip.Id, serviceEvents[i * 2].RequestId);
+            Assert.Equal("PassengerDroppedOff", serviceEvents[i * 2 + 1].Name);
+            Assert.Equal(requests[i].Trip.Id, serviceEvents[i * 2 + 1].RequestId);
         }
-        Assert.True(await Distance(new LookStopSchedulingStrategy()) < await Distance(new FifoStopSchedulingStrategy()));
+        Assert.Equal(3, system.GetAnalytics().Completed);
+        Assert.Equal(38, system.GetAnalytics().FloorsTravelled);
     }
 
     [Fact]

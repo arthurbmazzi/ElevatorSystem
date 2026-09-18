@@ -111,7 +111,8 @@ outside the easy-level scope. Performance targets remain to be benchmarked.
 
 - Local, express and freight elevator types, with configured service floors and weight limits.
 - Planned maintenance, emergency stop and explicit recovery.
-- LOOK routing, with FIFO available for comparison; destination never precedes pickup.
+- FIFO routing per car: complete pickup and destination before the next trip.
+  Advanced routing was removed at the user's request; destination never precedes pickup.
 - Floor authorization independent of VIP dispatch priority; bounded VIP head start.
 - Monitoring, structured event history, wait/travel/throughput/utilization and real assignment latency.
 - Stuck-elevator timeout using an injectable monotonic clock.

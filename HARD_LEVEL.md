@@ -15,7 +15,7 @@ dotnet run --project src/ElevatorSystem.Demo --no-launch-profile -- --benchmark
 ```
 
 `--hard` demonstra solicitações comuns, VIP, carga, manutenção, emergência,
-redistribuição e retomada. `--benchmark` compara FIFO e LOOK com 128 solicitações
+redistribuição e retomada. `--benchmark` mede o processamento FIFO com 128 solicitações
 concorrentes, os mesmos andares e timestamps determinísticos.
 
 Exemplo de uso da biblioteca:
@@ -39,7 +39,7 @@ passo a passo para inspecionar embarques e acionar os controles operacionais.
 | --- | --- |
 | `Domain/EnterpriseModels.cs` | Configuração imutável, tipos, permissões, solicitações e snapshots |
 | `Application/EnterpriseElevatorSystem.cs` | Admissão, despacho, ciclo de vida, operação e observações atômicas |
-| `Application/Scheduling/IStopSchedulingStrategy.cs` | Contrato de roteamento e implementações LOOK/FIFO |
+| `Application/Scheduling/IStopSchedulingStrategy.cs` | Contrato de roteamento e implementação FIFO |
 | `Composition/EnterpriseFleetFactory.cs` | Composição da frota padrão |
 | `tests/ElevatorSystem.Tests` | Testes xUnit de todos os níveis |
 
@@ -76,7 +76,7 @@ capacidade, a viagem fica aguardando. Outras solicitações continuam sendo aten
 um sistema de login. `IsVip` não concede andares adicionais. Em uma aplicação com
 usuários reais, esse perfil viria da autorização no servidor.
 
-## Viagens, despacho e LOOK
+## Viagens, despacho e FIFO
 
 Cada viagem conserva o `Request.Id` e percorre:
 
@@ -95,10 +95,11 @@ simula a política de rota para estimar o tempo até o novo embarque, incluindo
 movimento, embarques anteriores, destinos ativados e operações de portas. Desempates
 usam quantidade de viagens e ID. A estimativa não prevê chegadas futuras.
 
-LOOK atende paradas compatíveis na direção atual e inverte ao terminar a demanda.
-Chamadas de sentido contrário são atendidas no retorno; quando são a única demanda
-à frente, o carro chega à mais distante e inverte. Não vai ao limite do prédio sem
-necessidade. A estratégia FIFO oferece uma comparação mantendo viagens em sequência.
+FIFO atende as viagens na ordem em que foram atribuídas a cada carro: busca o
+passageiro, entrega no destino e só então atende a próxima viagem. Não reordena
+paradas por proximidade ou sentido. A prioridade VIP continua valendo na atribuição,
+antes de entrar nessa sequência. A interface de roteamento permanece como ponto
+de extensão para estudar outros algoritmos futuramente.
 
 VIP recebe vantagem de 20 ticks na ordem de despacho. A chave usa tick de chegada
 menos essa vantagem, depois timestamp e sequência. Assim, uma viagem comum que já
@@ -191,7 +192,7 @@ Não existe mais `Main` chamando verificações manualmente. Métodos `[Fact]` e
 - `FoundationTests`: validação, snapshots, estratégias, atomicidade e 128 chamadores.
 - `EasyLevelTests`: movimento, FIFO, portas, pares, logging e concorrência.
 - `MediumLevelTests`: prioridade, distribuição, cancelamento, falhas e workers concorrentes.
-- `HardLevelTests`: tipos/capacidade, acesso VIP, LOOK, ciclo de vida, manutenção,
+- `HardLevelTests`: tipos/capacidade, acesso VIP, FIFO, ciclo de vida, manutenção,
   emergência, timeout, envelhecimento, limites, métricas, snapshots e concorrência.
 
 Os testes usam `Assert` do xUnit. O paralelismo entre testes é desabilitado porque
@@ -201,18 +202,6 @@ suprimida para os testes herdados que usam gates e threads com timeouts explíci
 O timeout operacional é testado com relógio falso, sem sleeps reais.
 
 Medições de desempenho são feitas pela demo, sem assert de tempo instável no xUnit.
-Os testes verificam também uma carga conhecida na qual LOOK percorre menos andares
-que FIFO; isso não afirma superioridade em todas as distribuições de demanda.
-
-### Resultado observado em 17/09/2026
-
-Build Debug local, 128 solicitações, todas concluídas, nenhuma pendente:
-
-| Política | Espera média/P95 (ticks) | Andares percorridos | Atribuição média/máxima (ms) | Submissão máxima (ms) |
-| --- | --- | --- | --- | --- |
-| FIFO | 1206,62 / 2418 | 2561 | 0,074 / 7,958 | 1,343 |
-| LOOK | 327,92 / 706 | 311 | 0,029 / 0,876 | 0,143 |
-
-Execução inicial sem aquecimento; números dependem de JIT, máquina e carga.
-As atribuições medidas ficaram abaixo de 100 ms nesse cenário. Isso não comprova
-um SLA de ponta a ponta sob todas as cargas. Validação: 40 testes xUnit aprovados.
+Os testes verificam a ordem FIFO e a conclusão de cada viagem antes do próximo
+embarque no mesmo carro. Execute `--benchmark` para obter as medições atuais;
+resultados dependem de JIT, máquina e carga e não comprovam um SLA de ponta a ponta.
